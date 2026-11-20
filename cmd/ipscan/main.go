@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 跨越星轨的客 (qzh200)
+
 // Command ipscan opens the node quality inspector.
 package main
 
