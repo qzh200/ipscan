@@ -114,6 +114,18 @@ func matchesIPType(r app.Row, kind int) bool {
 
 var ipTypeLabels = []string{"全部 IP", "住宅 / 企业", "机房 IP", "移动网络"}
 
+// baseRows applies the filters that sit outside the status tabs, so the tab
+// counts match what the current IP type and search can show.
+func baseRows(rows []app.Row, ipType int, query string) []app.Row {
+	out := make([]app.Row, 0, len(rows))
+	for _, r := range rows {
+		if matchesIPType(r, ipType) && matchesQuery(r, query) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // tableColumnsFor proportions the columns to the window so the table always
 // fills the card: no column hogs the extra room on a wide screen, and the
 // score column stays visible on a narrow one.
@@ -215,7 +227,7 @@ func toolbarAndTable(c *ui.Context, a *app.App, st *State, snap app.Snapshot, t 
 }
 
 func toolbar(c *ui.Context, a *app.App, st *State, snap app.Snapshot, t *ui.Theme) {
-	rows := snap.Rows
+	rows := baseRows(snap.Rows, st.IPType, st.Query)
 	labels := []string{
 		fmt.Sprintf("全部 %d", len(rows)),
 		fmt.Sprintf("健康 %d", countRows(rows, healthyFilter)),
@@ -426,7 +438,7 @@ func transportDetail(n model.Node) string {
 		return n.Path
 	}
 	if n.ServiceName != "" {
-		return n.ServiceName
+		return "svc " + n.ServiceName
 	}
 	if n.Flow != "" {
 		return n.Flow

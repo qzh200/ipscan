@@ -180,6 +180,20 @@ func paramsCard(c *ui.Context, row app.Row, t *ui.Theme) {
 }
 
 func globalCard(c *ui.Context, a *app.App, row app.Row, index int, t *ui.Theme) {
+	idle := a.Remote != nil && !row.RemoteBusy && row.RemoteErr == "" && row.Remote == nil
+	if idle {
+		ui.Row(c).FillWidth().Padding(14, 16).Gap(10).AlignItems(ui.Center).
+			Background(t.Surface).Border(1, t.Border).Radius(t.Space(3)).Children(func() {
+			components.Icon(c, lucide.Globe).Size(16, 16).TextColor(t.Accent)
+			components.Text(c, "全球网络测试").FontSize(13).Bold()
+			components.Text(c, "从全球 8 个探测点 ping 该地址，约 5–15 秒。").
+				FontSize(11.5).TextColor(t.TextMuted).Grow(1).SingleLine()
+			components.Button(c, "全球 Ping（8 个探测点）", components.ButtonPrimary).
+				OnClick(func() { a.CheckGlobal(index) })
+		})
+		return
+	}
+
 	ui.Column(c).FillWidth().Padding(16).Gap(10).
 		Background(t.Surface).Border(1, t.Border).Radius(t.Space(3)).Children(func() {
 		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
@@ -221,13 +235,6 @@ func globalCard(c *ui.Context, a *app.App, row app.Row, index int, t *ui.Theme) 
 					FontSize(11).TextColor(t.TextMuted)
 			}
 			components.Button(c, "重新测试", components.ButtonGhost).AlignSelf(ui.Start).OnClick(func() { a.CheckGlobal(index) })
-		default:
-			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-				components.Button(c, "全球 Ping（8 个探测点）", components.ButtonPrimary).
-					OnClick(func() { a.CheckGlobal(index) })
-				components.Text(c, "从全球探测点 ping 该地址，约 5–15 秒；目标地址会发送给 api.globalping.io。").
-					FontSize(11.5).TextColor(t.TextMuted).Wrap().Grow(1)
-			})
 		}
 	})
 }

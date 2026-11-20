@@ -234,6 +234,31 @@ func (a *App) Snapshot() Snapshot {
 	}
 	warnings := append([]string(nil), a.warnings...)
 
+	stats := Summarize(rows)
+
+	elapsed := a.elapsed
+	if a.status == StatusLoading || a.status == StatusProbing {
+		elapsed = time.Since(a.started)
+	}
+	return Snapshot{
+		Rows:     rows,
+		Format:   a.format,
+		Warnings: warnings,
+		Status:   a.status,
+		Message:  a.message,
+		Done:     a.done,
+		Total:    a.total,
+		Selected: a.selected,
+		Elapsed:  elapsed,
+		Stats:    stats,
+		GeoNote:  a.geoNote,
+	}
+}
+
+// Summarize computes the counts and averages shown by the summary cards.
+// The screen passes the currently filtered rows, so the cards follow the
+// subscription scope the table shows.
+func Summarize(rows []Row) Stats {
 	stats := Stats{Total: len(rows)}
 	var delaySum time.Duration
 	var delayCount, scoreSum, scoreCount int
@@ -263,24 +288,7 @@ func (a *App) Snapshot() Snapshot {
 	if scoreCount > 0 {
 		stats.AvgScore = scoreSum / scoreCount
 	}
-
-	elapsed := a.elapsed
-	if a.status == StatusLoading || a.status == StatusProbing {
-		elapsed = time.Since(a.started)
-	}
-	return Snapshot{
-		Rows:     rows,
-		Format:   a.format,
-		Warnings: warnings,
-		Status:   a.status,
-		Message:  a.message,
-		Done:     a.done,
-		Total:    a.total,
-		Selected: a.selected,
-		Elapsed:  elapsed,
-		Stats:    stats,
-		GeoNote:  a.geoNote,
-	}
+	return stats
 }
 
 func (a *App) start(job func(ctx context.Context, gen int)) {
@@ -375,9 +383,13 @@ func (a *App) probe(ctx context.Context, gen int, nodes []model.Node) {
 				udpOnly++
 			}
 		}
+		unreachable := len(a.rows) - reachable - udpOnly
 		a.message = fmt.Sprintf("检测完成：%d 个节点，%d 个 TCP 可达", len(a.rows), reachable)
 		if udpOnly > 0 {
 			a.message += fmt.Sprintf("，%d 个 QUIC 节点未做 TCP 握手", udpOnly)
+		}
+		if unreachable > 0 {
+			a.message += fmt.Sprintf("，%d 个不可达", unreachable)
 		}
 	})
 }

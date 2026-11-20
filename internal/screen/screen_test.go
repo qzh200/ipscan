@@ -109,6 +109,7 @@ proxies:
 
 func newTestApp() *app.App {
 	a := app.New(fakeFetcher{body: []byte(fixture)}, fakeScanner{})
+	a.Remote = fakePinger{}
 	*a.Input = "https://example.com/sub"
 	return a
 }
@@ -438,6 +439,12 @@ func TestIPTypeFilter(t *testing.T) {
 	if !strings.Contains(body, "日本 SS") || strings.Contains(body, "香港 WS") || strings.Contains(body, "德国 HY2") {
 		t.Fatalf("residential filter wrong:\n%s", body)
 	}
+	for _, want := range []string{"全部 1", "健康 1", "显示 1 / 4 个节点", "1 条已检测"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("filtered counts missing %q:\n%s", want, body)
+		}
+	}
+	_ = snapshot(t, tt, "ipscan-ipfilter.png")
 
 	click("住宅 / 企业")
 	click("机房 IP")

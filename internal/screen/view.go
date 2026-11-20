@@ -46,8 +46,7 @@ func View(c *ui.Context, a *app.App, st *State) {
 	snap := a.Snapshot()
 
 	ui.Column(c).Fill().Background(t.Background).Children(func() {
-		topBar(c, snap, t)
-		ui.Column(c).Grow(1).Basis(0).Padding(26, 20).Gap(16).Children(func() {
+		ui.Column(c).Grow(1).Basis(0).Padding(26, 22).Gap(16).Children(func() {
 			if snap.Selected >= 0 && snap.Selected < len(snap.Rows) {
 				detailPage(c, a, snap, t)
 				return
@@ -56,27 +55,12 @@ func View(c *ui.Context, a *app.App, st *State) {
 			subscriptionCard(c, a, t)
 			statusLine(c, a, snap, t)
 			if len(snap.Rows) > 0 {
-				statsRow(c, snap, t)
+				statsRow(c, st, snap, t)
 			}
 			toolbarAndTable(c, a, st, snap, t)
-			footer(c, snap, t)
+			footer(c, snap, st, t)
 		})
 	})
-}
-
-func topBar(c *ui.Context, snap app.Snapshot, t *ui.Theme) {
-	ui.Row(c).Height(56).Padding(16, 26).AlignItems(ui.Center).Gap(10).
-		Background(t.Surface).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).
-		Children(func() {
-			ui.Row(c).Size(28, 28).Radius(8).Background(t.Accent).Center().Children(func() {
-				components.Icon(c, lucide.Activity).Size(16, 16).TextColor(t.AccentText)
-			})
-			components.Text(c, "节点体检").FontSize(15).Bold()
-			label, tone := statusBadge(snap)
-			components.Badge(c, label, components.BadgeOptions{Tone: tone})
-			ui.Spacer(c)
-			components.Text(c, "本地探测 + Globalping").FontSize(11.5).TextColor(t.TextMuted)
-		})
 }
 
 func statusBadge(snap app.Snapshot) (string, components.BadgeTone) {
@@ -100,13 +84,16 @@ func hero(c *ui.Context, snap app.Snapshot, t *ui.Theme) {
 			components.Text(c, "订阅 → 节点 → 延迟 / 抖动 / TLS / IP 归属 / 全球探测").
 				FontSize(12.5).TextColor(t.TextMuted)
 		})
-		ui.Row(c).Gap(6).Children(func() {
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+			label, tone := statusBadge(snap)
+			components.Badge(c, label, components.BadgeOptions{Tone: tone})
 			if snap.Format != "" {
 				components.Badge(c, snap.Format, components.BadgeOptions{Tone: components.BadgeNeutral})
 			}
 			if snap.Status == app.StatusDone && len(snap.Rows) > 0 {
 				components.Badge(c, fmt.Sprintf("%d 个节点", len(snap.Rows)), components.BadgeOptions{Tone: components.BadgeAccent})
 			}
+			components.Text(c, "本地探测 + Globalping").FontSize(11).TextColor(t.TextMuted)
 		})
 	})
 }
@@ -180,20 +167,21 @@ func statusLine(c *ui.Context, a *app.App, snap app.Snapshot, t *ui.Theme) {
 	}
 }
 
-func statsRow(c *ui.Context, snap app.Snapshot, t *ui.Theme) {
+func statsRow(c *ui.Context, st *State, snap app.Snapshot, t *ui.Theme) {
+	stats := app.Summarize(baseRows(snap.Rows, st.IPType, st.Query))
 	reachPct := 0.0
-	if snap.Stats.Total > 0 {
-		reachPct = float64(snap.Stats.Reachable) / float64(snap.Stats.Total) * 100
+	if stats.Total > 0 {
+		reachPct = float64(stats.Reachable) / float64(stats.Total) * 100
 	}
 	ui.Row(c).Gap(12).AlignItems(ui.Stretch).Children(func() {
-		statCard(c, t, lucide.Server, "节点总数", fmt.Sprintf("%d", snap.Stats.Total),
-			fmt.Sprintf("%d 条已检测", snap.Stats.Probed), t.Text)
-		statCard(c, t, lucide.Wifi, "TCP 可达", fmt.Sprintf("%d", snap.Stats.Reachable),
+		statCard(c, t, lucide.Server, "节点总数", fmt.Sprintf("%d", stats.Total),
+			fmt.Sprintf("%d 条已检测", stats.Probed), t.Text)
+		statCard(c, t, lucide.Wifi, "TCP 可达", fmt.Sprintf("%d", stats.Reachable),
 			fmt.Sprintf("覆盖 %.0f%%", reachPct), t.Success)
-		statCard(c, t, lucide.Timer, "平均延迟", formatDelay(snap.Stats.AvgDelay),
+		statCard(c, t, lucide.Timer, "平均延迟", formatDelay(stats.AvgDelay),
 			"TCP 握手均值", t.Accent)
-		statCard(c, t, lucide.Gauge, "平均评分", fmt.Sprintf("%d", snap.Stats.AvgScore),
-			fmt.Sprintf("%d 个健康节点", snap.Stats.Healthy), t.Warning)
+		statCard(c, t, lucide.Gauge, "平均评分", fmt.Sprintf("%d", stats.AvgScore),
+			fmt.Sprintf("%d 个健康节点", stats.Healthy), t.Warning)
 	})
 }
 
@@ -210,12 +198,17 @@ func statCard(c *ui.Context, t *ui.Theme, icon func() *ui.SVG, label, value, hin
 		})
 }
 
-func footer(c *ui.Context, snap app.Snapshot, t *ui.Theme) {
+func footer(c *ui.Context, snap app.Snapshot, st *State, t *ui.Theme) {
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 		components.Text(c, "IP 归属 ip-api.com → ipwho.is · 全球探测 Globalping").FontSize(11).TextColor(t.TextMuted)
 		ui.Spacer(c)
 		if len(snap.Rows) > 0 {
-			components.Text(c, fmt.Sprintf("%d 个节点 · 点击行查看全部参数", len(snap.Rows))).
+			visible := len(filterRows(snap.Rows, filterMode(st.Filter), st.Query, st.IPType))
+			label := fmt.Sprintf("%d 个节点", len(snap.Rows))
+			if visible != len(snap.Rows) {
+				label = fmt.Sprintf("显示 %d / %d 个节点", visible, len(snap.Rows))
+			}
+			components.Text(c, label+" · 点击行查看全部参数").
 				FontSize(11).TextColor(t.TextMuted)
 		}
 	})
