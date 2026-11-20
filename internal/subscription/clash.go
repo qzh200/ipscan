@@ -35,12 +35,12 @@ type clashProxy struct {
 	ClientFingerprint string `yaml:"client-fingerprint"`
 	ALPN              []any  `yaml:"alpn"`
 
-	Network  string         `yaml:"network"`
-	WSOpts   clashWSOpts    `yaml:"ws-opts"`
-	GrpcOpts clashGrpcOpts  `yaml:"grpc-opts"`
-	H2Opts   clashH2Opts    `yaml:"h2-opts"`
-	HTTPOpts clashHTTPOpts  `yaml:"http-opts"`
-	Reality  clashReality   `yaml:"reality-opts"`
+	Network  string        `yaml:"network"`
+	WSOpts   clashWSOpts   `yaml:"ws-opts"`
+	GrpcOpts clashGrpcOpts `yaml:"grpc-opts"`
+	H2Opts   clashH2Opts   `yaml:"h2-opts"`
+	HTTPOpts clashHTTPOpts `yaml:"http-opts"`
+	Reality  clashReality  `yaml:"reality-opts"`
 
 	Plugin     string         `yaml:"plugin"`
 	PluginOpts map[string]any `yaml:"plugin-opts"`
@@ -123,23 +123,23 @@ func clashToNode(p clashProxy) (model.Node, bool) {
 	}
 
 	n := model.Node{
-		Name:        strings.TrimSpace(p.Name),
-		Type:        typ,
-		Server:      strings.TrimSpace(p.Server),
-		Port:        intOf(p.Port),
-		UUID:        p.UUID,
-		Password:    p.Password,
-		Cipher:      p.Cipher,
-		AlterID:     intOf(p.AlterID),
-		Flow:        p.Flow,
-		Network:     strings.ToLower(p.Network),
-		ALPN:        joinAny(p.ALPN),
-		Fingerprint: p.ClientFingerprint,
-		Insecure:    p.SkipCertVerify,
-		Plugin:      p.Plugin,
-		Obfs:        p.Obfs,
+		Name:         strings.TrimSpace(p.Name),
+		Type:         typ,
+		Server:       strings.TrimSpace(p.Server),
+		Port:         intOf(p.Port),
+		UUID:         p.UUID,
+		Password:     p.Password,
+		Cipher:       p.Cipher,
+		AlterID:      intOf(p.AlterID),
+		Flow:         p.Flow,
+		Network:      strings.ToLower(p.Network),
+		ALPN:         joinAny(p.ALPN),
+		Fingerprint:  p.ClientFingerprint,
+		Insecure:     p.SkipCertVerify,
+		Plugin:       p.Plugin,
+		Obfs:         p.Obfs,
 		ObfsPassword: p.ObfsPass,
-		Extra:       map[string]string{},
+		Extra:        map[string]string{},
 	}
 	if n.Name == "" {
 		n.Name = n.Address()

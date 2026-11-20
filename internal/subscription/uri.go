@@ -224,20 +224,20 @@ func parseVmess(body string) (model.Node, error) {
 		return model.Node{}, fmt.Errorf("vmess JSON 解析失败: %w", err)
 	}
 	n := model.Node{
-		Type:   "vmess",
-		Server: str(m, "add"),
-		Port:   num(m, "port"),
-		UUID:   str(m, "id"),
-		AlterID: num(m, "aid"),
-		Cipher: str(m, "scy"),
-		Network: firstNonEmpty(str(m, "net"), "tcp"),
-		Security: firstNonEmpty(str(m, "tls"), "none"),
-		Host:   str(m, "host"),
-		Path:   str(m, "path"),
-		ServerName: firstNonEmpty(str(m, "sni"), str(m, "host")),
-		ALPN:   str(m, "alpn"),
+		Type:        "vmess",
+		Server:      str(m, "add"),
+		Port:        num(m, "port"),
+		UUID:        str(m, "id"),
+		AlterID:     num(m, "aid"),
+		Cipher:      str(m, "scy"),
+		Network:     firstNonEmpty(str(m, "net"), "tcp"),
+		Security:    firstNonEmpty(str(m, "tls"), "none"),
+		Host:        str(m, "host"),
+		Path:        str(m, "path"),
+		ServerName:  firstNonEmpty(str(m, "sni"), str(m, "host")),
+		ALPN:        str(m, "alpn"),
 		Fingerprint: str(m, "fp"),
-		Name:   str(m, "ps"),
+		Name:        str(m, "ps"),
 	}
 	n.Insecure = truthy(str(m, "allowInsecure"))
 	if htype := str(m, "type"); htype != "" && htype != "none" {

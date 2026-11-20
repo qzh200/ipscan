@@ -211,20 +211,20 @@ func fromSingBoxOutbound(o map[string]any) (model.Node, bool) {
 	}
 
 	n := model.Node{
-		Type:        typ,
-		Name:        str(o, "tag"),
-		Server:      str(o, "server"),
-		Port:        num(o, "server_port"),
-		UUID:        str(o, "uuid"),
-		Password:    str(o, "password"),
-		Cipher:      str(o, "method"),
-		AlterID:     num(o, "alter_id"),
-		Flow:        str(o, "flow"),
-		Network:     "tcp",
-		Security:    "none",
-		Obfs:        str(obj(o, "obfs"), "type"),
+		Type:         typ,
+		Name:         str(o, "tag"),
+		Server:       str(o, "server"),
+		Port:         num(o, "server_port"),
+		UUID:         str(o, "uuid"),
+		Password:     str(o, "password"),
+		Cipher:       str(o, "method"),
+		AlterID:      num(o, "alter_id"),
+		Flow:         str(o, "flow"),
+		Network:      "tcp",
+		Security:     "none",
+		Obfs:         str(obj(o, "obfs"), "type"),
 		ObfsPassword: str(obj(o, "obfs"), "password"),
-		Extra:       map[string]string{},
+		Extra:        map[string]string{},
 	}
 
 	if tls := obj(o, "tls"); tls != nil {
