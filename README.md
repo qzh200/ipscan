@@ -319,6 +319,10 @@ GOPROXY=off go test ./...
 
 Copyright (C) 2026 跨越星轨的客 (GitHub: [@qzh200](https://github.com/qzh200))
 
+## 许可证
+
+Copyright (C) 2026 跨越星轨的客 (GitHub: [@qzh200](https://github.com/qzh200))
+
 本项目以 **GNU General Public License v3.0 or later**（GPL-3.0-or-later）发布，
 完整许可证文本见 [LICENSE](LICENSE)。
 
