@@ -1,0 +1,5 @@
+/ipscan.exe
+/nodecheck.exe
+/dist/
+*.test
+/snapshots/
