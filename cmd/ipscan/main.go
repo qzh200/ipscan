@@ -25,7 +25,7 @@ func newScanner() *scan.Scanner {
 func main() {
 	controller := app.New(subscription.NewFetcher(), newScanner())
 	controller.Remote = remote.NewGlobalping()
-	view := &screen.State{}
+	view := screen.NewState()
 
 	mygo.App.WhenReady(func() {
 		mygo.NewWindow(mygo.WindowOptions{

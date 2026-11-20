@@ -145,7 +145,7 @@ func snapshot(t *testing.T, tt *ui.Tester, name string) string {
 
 func TestViewShowsNodesAndDetail(t *testing.T) {
 	a := newTestApp()
-	st := &State{}
+	st := NewState()
 	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1280, 840)
 	tt.Frame()
 
@@ -188,7 +188,7 @@ func TestViewShowsNodesAndDetail(t *testing.T) {
 
 func TestFilterAndSearch(t *testing.T) {
 	a := newTestApp()
-	st := &State{}
+	st := NewState()
 	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1280, 840)
 	tt.Frame()
 	a.Load()
@@ -220,7 +220,7 @@ func TestNarrowWindowLongList(t *testing.T) {
 	}
 	a := app.New(fakeFetcher{body: []byte(yaml.String())}, fakeScanner{})
 	*a.Input = "https://example.com/long"
-	st := &State{}
+	st := NewState()
 	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1180, 700)
 	tt.Frame()
 	a.Load()
@@ -244,7 +244,7 @@ func TestNarrowWindowLongList(t *testing.T) {
 func TestErrorState(t *testing.T) {
 	a := app.New(fakeFetcher{err: errors.New("订阅下载失败: 连接超时")}, fakeScanner{})
 	*a.Input = "https://example.com/sub"
-	st := &State{}
+	st := NewState()
 	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1180, 700)
 	tt.Frame()
 	a.Load()
@@ -268,7 +268,7 @@ func (geoErrorScanner) Scan(ctx context.Context, nodes []model.Node, progress fu
 func TestGeoFailureShowsReason(t *testing.T) {
 	a := app.New(fakeFetcher{body: []byte(fixture)}, geoErrorScanner{})
 	*a.Input = "https://example.com/sub"
-	st := &State{}
+	st := NewState()
 	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1280, 840)
 	tt.Frame()
 	a.Load()
@@ -308,7 +308,7 @@ func TestEndToEndLocalNode(t *testing.T) {
 	controller := app.New(subscription.NewFetcher(), &scan.Scanner{Prober: prober, Workers: 2})
 	*controller.Input = file
 
-	st := &State{}
+	st := NewState()
 	tt := ui.NewTester(func(c *ui.Context) { View(c, controller, st) }, 1180, 700)
 	tt.Frame()
 	controller.Load()
@@ -340,7 +340,7 @@ func (fakePinger) Ping(_ context.Context, target string, _ int) (remote.Report, 
 func TestGlobalPingFromDrawer(t *testing.T) {
 	a := newTestApp()
 	a.Remote = fakePinger{}
-	st := &State{}
+	st := NewState()
 	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1280, 840)
 	tt.Frame()
 	a.Load()
@@ -367,7 +367,7 @@ func TestGlobalPingFromDrawer(t *testing.T) {
 
 func TestSortableHeaders(t *testing.T) {
 	a := newTestApp()
-	st := &State{}
+	st := NewState()
 	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1280, 840)
 	tt.Frame()
 	a.Load()
@@ -394,6 +394,9 @@ func TestSortableHeaders(t *testing.T) {
 		tt.Advance(150 * time.Millisecond)
 	}
 
+	if !ordered("德国 HY2", "美国 Reality", "日本 SS", "香港 WS") {
+		t.Fatalf("default name order wrong:\n%s", texts(tt))
+	}
 	click("评分")
 	if !ordered("香港 WS", "日本 SS", "美国 Reality", "德国 HY2") {
 		t.Fatalf("score desc order wrong:\n%s", texts(tt))
@@ -407,8 +410,39 @@ func TestSortableHeaders(t *testing.T) {
 	if !ordered("香港 WS", "日本 SS", "美国 Reality", "德国 HY2") {
 		t.Fatalf("delay asc order wrong:\n%s", texts(tt))
 	}
-	click("清除排序")
-	if !ordered("香港 WS", "美国 Reality", "日本 SS", "德国 HY2") {
-		t.Fatalf("cleared order wrong:\n%s", texts(tt))
+	click("节点")
+	if !ordered("德国 HY2", "美国 Reality", "日本 SS", "香港 WS") {
+		t.Fatalf("name asc order wrong:\n%s", texts(tt))
+	}
+}
+
+func TestIPTypeFilter(t *testing.T) {
+	a := newTestApp()
+	st := NewState()
+	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1280, 840)
+	tt.Frame()
+	a.Load()
+	waitFor(t, tt, "3 个 TCP 可达")
+	tt.Advance(300 * time.Millisecond)
+
+	click := func(label string) {
+		t.Helper()
+		if err := tt.Click(label); err != nil {
+			t.Fatalf("click %q: %v", label, err)
+		}
+		tt.Advance(200 * time.Millisecond)
+	}
+	click("全部 IP")
+	click("住宅 / 企业")
+	body := texts(tt)
+	if !strings.Contains(body, "日本 SS") || strings.Contains(body, "香港 WS") || strings.Contains(body, "德国 HY2") {
+		t.Fatalf("residential filter wrong:\n%s", body)
+	}
+
+	click("住宅 / 企业")
+	click("机房 IP")
+	body = texts(tt)
+	if strings.Contains(body, "日本 SS") || !strings.Contains(body, "香港 WS") || !strings.Contains(body, "德国 HY2") {
+		t.Fatalf("hosting filter wrong:\n%s", body)
 	}
 }

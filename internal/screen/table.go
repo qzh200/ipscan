@@ -13,11 +13,16 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/oneo-me/onevra/source/components"
 	"github.com/oneo-me/onevra/source/icons/lucide"
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
 
 	"ipscan/internal/app"
 	"ipscan/internal/model"
 	"ipscan/internal/probe"
 )
+
+// nameCollator orders Chinese node names by pinyin rather than by codepoint.
+var nameCollator = collate.New(language.SimplifiedChinese)
 
 type filterMode int
 
@@ -76,15 +81,38 @@ type filteredRow struct {
 	row   app.Row
 }
 
-func filterRows(rows []app.Row, mode filterMode, query string) []filteredRow {
+func filterRows(rows []app.Row, mode filterMode, query string, ipType int) []filteredRow {
 	out := make([]filteredRow, 0, len(rows))
 	for i, r := range rows {
-		if rowMatches(r, mode) && matchesQuery(r, query) {
+		if rowMatches(r, mode) && matchesIPType(r, ipType) && matchesQuery(r, query) {
 			out = append(out, filteredRow{index: i, row: r})
 		}
 	}
 	return out
 }
+
+// matchesIPType splits registry roles: residential/enterprise, datacenter and
+// mobile. A node without registry data only appears under "all".
+func matchesIPType(r app.Row, kind int) bool {
+	if kind == 0 {
+		return true
+	}
+	geo := r.Result.Geo
+	if geo == nil {
+		return false
+	}
+	switch kind {
+	case 1:
+		return !geo.Hosting && !geo.Mobile
+	case 2:
+		return geo.Hosting
+	case 3:
+		return geo.Mobile
+	}
+	return true
+}
+
+var ipTypeLabels = []string{"全部 IP", "住宅 / 企业", "机房 IP", "移动网络"}
 
 // tableColumnsFor proportions the columns to the window so the table always
 // fills the card: no column hogs the extra room on a wide screen, and the
@@ -154,7 +182,7 @@ func toolbarAndTable(c *ui.Context, a *app.App, st *State, snap app.Snapshot, t 
 		Children(func() {
 			toolbar(c, a, st, snap, t)
 			ui.Box(c).Height(1).Background(t.Border)
-			rows := filterRows(snap.Rows, filterMode(st.Filter), st.Query)
+			rows := filterRows(snap.Rows, filterMode(st.Filter), st.Query, st.IPType)
 			switch {
 			case len(snap.Rows) == 0:
 				emptyState(c, t, false)
@@ -203,17 +231,8 @@ func toolbar(c *ui.Context, a *app.App, st *State, snap app.Snapshot, t *ui.Them
 			components.TextBox(c, &st.Query, components.TextBoxOptions{LeadingIcon: lucide.Search()}).
 				Label("搜索节点").Placeholder("搜索节点 / 域名 / IP / 地区")
 		})
-		if st.Sort.Column == "" {
-			components.Text(c, "点击列头排序").FontSize(11).TextColor(t.TextMuted)
-		}
+		ipSelect(c, st)
 		ui.Spacer(c)
-		if st.Sort.Column != "" {
-			components.Badge(c, sortLabel(st.Sort), components.BadgeOptions{Tone: components.BadgeAccent})
-			components.Button(c, "清除排序", components.ButtonGhost).OnClick(func() {
-				st.Sort = ui.SortOrder{}
-				st.sortSeen = ""
-			})
-		}
 		if snap.Status == app.StatusProbing {
 			components.Button(c, "停止", components.ButtonGhost).OnClick(a.Stop)
 		}
@@ -226,6 +245,27 @@ func toolbar(c *ui.Context, a *app.App, st *State, snap app.Snapshot, t *ui.Them
 				components.Text(c, "重新检测")
 			})
 		})
+	})
+}
+
+func ipSelect(c *ui.Context, st *State) {
+	sel := components.Select(c, &st.IPType)
+	sel.Trigger.Label("IP 类型").Width(138)
+	sel.Trigger.Children(func() {
+		idx := st.IPType
+		if idx < 0 || idx >= len(ipTypeLabels) {
+			idx = 0
+		}
+		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+			components.Icon(c, lucide.ListFilter).Size(13, 13)
+			components.Text(c, ipTypeLabels[idx]).SingleLine()
+		})
+	})
+	sel.Popup(func(panel ui.Element) {
+		for i, label := range ipTypeLabels {
+			item := sel.Item(i)
+			item.Children(func() { components.Text(c, label).SingleLine() })
+		}
 	})
 }
 
@@ -470,22 +510,6 @@ func compactDuration(d time.Duration) string {
 // defaultDescending gives a newly chosen column its natural first direction.
 func defaultDescending(column string) bool { return column == "score" }
 
-func sortLabel(order ui.SortOrder) string {
-	names := map[string]string{
-		"name": "节点", "server": "地址", "port": "端口", "ip": "IP",
-		"geo": "地区", "network": "传输", "tls": "TLS",
-		"delay": "延迟", "jitter": "抖动", "loss": "丢包", "score": "评分",
-	}
-	label, ok := names[order.Column]
-	if !ok {
-		label = order.Column
-	}
-	if order.Descending {
-		return label + " ↓"
-	}
-	return label + " ↑"
-}
-
 // sortFiltered orders rows in place. Missing values (unprobed nodes, QUIC
 // nodes without TCP latency) stay at the end whichever direction is chosen.
 func sortFiltered(rows []filteredRow, order ui.SortOrder) {
@@ -524,7 +548,7 @@ func hasSortValue(r *app.Row, column string) bool {
 func compareRows(a, b *app.Row, column string) int {
 	switch column {
 	case "name":
-		return strings.Compare(strings.ToLower(a.Node.Name), strings.ToLower(b.Node.Name))
+		return nameCollator.CompareString(a.Node.Name, b.Node.Name)
 	case "server":
 		return strings.Compare(strings.ToLower(a.Node.Server), strings.ToLower(b.Node.Server))
 	case "port":

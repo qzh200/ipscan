@@ -20,11 +20,22 @@ import (
 type State struct {
 	Filter int
 	Query  string
+	// IPType filters by registry role: 0 all, 1 residential/enterprise,
+	// 2 datacenter, 3 mobile.
+	IPType int
 	// Sort is the table's current order; Table keeps its column layout and
 	// reports header clicks through OnSort.
 	Sort     ui.SortOrder
 	Table    components.TableState
 	sortSeen string
+}
+
+// NewState starts with nodes ordered by name, the list's natural reading order.
+func NewState() *State {
+	return &State{
+		Sort:     ui.SortOrder{Column: "name"},
+		sortSeen: "name",
+	}
 }
 
 // View is the root of the window.

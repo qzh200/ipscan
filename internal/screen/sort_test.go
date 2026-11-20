@@ -91,3 +91,27 @@ func TestSortMisplacesNothingOnTies(t *testing.T) {
 	sortFiltered(rows, ui.SortOrder{Column: "score", Descending: true})
 	assertOrder(t, rows, "a", "b", "c")
 }
+
+func TestMatchesIPType(t *testing.T) {
+	rows := []app.Row{
+		{Result: probe.Result{Geo: nil}},
+		{Result: probe.Result{Geo: &probe.Geo{Hosting: true}}},
+		{Result: probe.Result{Geo: &probe.Geo{}}},
+		{Result: probe.Result{Geo: &probe.Geo{Mobile: true}}},
+	}
+	if !matchesIPType(rows[0], 0) {
+		t.Fatal("all should include unknown geo")
+	}
+	if matchesIPType(rows[0], 1) || matchesIPType(rows[0], 2) || matchesIPType(rows[0], 3) {
+		t.Fatal("unknown geo must not match a role filter")
+	}
+	if matchesIPType(rows[1], 1) || !matchesIPType(rows[1], 2) {
+		t.Fatal("hosting row should only match datacenter")
+	}
+	if !matchesIPType(rows[2], 1) || matchesIPType(rows[2], 2) {
+		t.Fatal("plain geo should count as residential/enterprise")
+	}
+	if !matchesIPType(rows[3], 3) || matchesIPType(rows[3], 1) {
+		t.Fatal("mobile row should only match mobile")
+	}
+}
