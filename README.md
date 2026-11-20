@@ -2,7 +2,8 @@
 
 一个纯 Go 原生桌面的代理节点质量检查器：粘贴 Clash / Xray / sing-box 订阅链接，
 解析全部节点，逐条测量 TCP 握手延迟、抖动、丢包与 TLS 握手/证书，并查询 IP 归属、
-运营商与机房/代理标记。界面用 [Lobe MyGo](https://mygo.lobehub.com/) 组件在 GPU 上绘制，
+运营商与机房/代理标记。界面用 [Onevra](https://github.com/oneo-me/onevra)（MyGo 原生 UI
+设计系统）在 GPU 上绘制：暖白纸张底色、陶土强调色、卡片式统计与可排序/拖拽列宽的数据表，
 不依赖 WebView。
 
 ## 构建与运行
@@ -38,6 +39,15 @@ go build -o ipscan.exe ./cmd/ipscan
 
 IP 归属查询先走 ip-api.com 批量接口，被墙或限流时自动回退到 HTTPS 的 ipwho.is；
 两者都失败时状态栏显示“归属查询失败”，延迟/TLS 结果不受影响。只发送解析出的公网 IP。
+
+## 界面
+
+- Onevra 主题（明/暗自动跟随系统）：`theme.Apply` + 暖白/暖炭底色与陶土强调色。
+- 组件：`Button`、`TextBox`、`Badge`、`Tabs`、`Table/TableRow`、`ScrollView`、`Progress`、
+  `Spinner`、`Icon`（Lucide）。
+- 列表页：订阅卡片、4 张统计卡、筛选/搜索、可拖拽调整列宽的数据表；窗口宽度 < 1240 时
+  自动收紧列宽，避免右侧列被裁掉。
+- 详情页：整页展示全球探测、连接质量、TLS 证书、IP 归属与全部节点参数，返回列表一键切换。
 
 ## 全球多点检测
 

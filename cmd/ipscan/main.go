@@ -34,7 +34,7 @@ func main() {
 			Height:          840,
 			MinWidth:        1180,
 			MinHeight:       640,
-			BackgroundColor: "light-dark(#f2f3f5, #17181c)",
+			BackgroundColor: "light-dark(#fcfbf9, #211f1c)",
 			Content:         ui.View(func(c *ui.Context) { screen.View(c, controller, view) }),
 		})
 	})

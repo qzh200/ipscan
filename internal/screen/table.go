@@ -7,11 +7,8 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/display"
-	"github.com/lobehub/lobe-mygo/pkg/layout"
-	"github.com/lobehub/lobe-mygo/pkg/lucide"
-	"github.com/lobehub/lobe-mygo/pkg/overlay"
-	"github.com/lobehub/lobe-mygo/pkg/theme"
+	"github.com/oneo-me/onevra/source/components"
+	"github.com/oneo-me/onevra/source/icons/lucide"
 
 	"ipscan/internal/app"
 	"ipscan/internal/model"
@@ -75,19 +72,6 @@ type filteredRow struct {
 	row   app.Row
 }
 
-const tableRowHeight float32 = 58
-
-// cellGap is the breathing room between two columns; text is clipped this much
-// narrower than its cell so an ellipsis never touches the next column.
-const cellGap float32 = 10
-
-func cellTextWidth(width float32) float32 {
-	if width <= cellGap {
-		return width
-	}
-	return width - cellGap
-}
-
 func filterRows(rows []app.Row, mode filterMode, query string) []filteredRow {
 	out := make([]filteredRow, 0, len(rows))
 	for i, r := range rows {
@@ -98,259 +82,263 @@ func filterRows(rows []app.Row, mode filterMode, query string) []filteredRow {
 	return out
 }
 
-// Column widths are fixed so the header and every row line up. The name column
-// absorbs the remaining width of the window.
-type tableCols struct {
-	dot, name, server, port, ip, geo, network, security, delay, jitter, loss, score, arrow float32
+// tableColumnsFor fits the fixed columns into the card: narrower windows use
+// tighter widths so the score column never falls off the right edge.
+func tableColumnsFor(windowWidth float32) []ui.TableColumn {
+	minName, server, port, ip, geo, network, tls, delay, jitter, loss, score :=
+		float32(200), float32(158), float32(64), float32(116), float32(182), float32(86), float32(88), float32(88), float32(66), float32(54), float32(92)
+	if windowWidth < 1240 {
+		minName, server, port, ip, geo, network, tls, delay, jitter, loss, score =
+			150, 132, 54, 100, 150, 72, 78, 78, 56, 50, 84
+	}
+	return []ui.TableColumn{
+		{ID: "name", Title: "节点", MinWidth: minName},
+		{ID: "server", Title: "地址", Width: server},
+		{ID: "port", Title: "端口", Width: port, Align: ui.End},
+		{ID: "ip", Title: "IP", Width: ip},
+		{ID: "geo", Title: "地区 / 运营商", Width: geo},
+		{ID: "network", Title: "传输", Width: network},
+		{ID: "tls", Title: "TLS", Width: tls},
+		{ID: "delay", Title: "延迟", Width: delay, Align: ui.End},
+		{ID: "jitter", Title: "抖动", Width: jitter, Align: ui.End},
+		{ID: "loss", Title: "丢包", Width: loss, Align: ui.End},
+		{ID: "score", Title: "评分", Width: score, Align: ui.End},
+	}
 }
 
-func newTableCols(c *ui.Context) tableCols {
-	w, _ := c.Size()
-	fixed := float32(18 + 160 + 52 + 112 + 176 + 84 + 86 + 76 + 62 + 44 + 78 + 12)
-	name := w - 70 - fixed // page padding, card border and inner padding
-	if name < 170 {
-		name = 170
-	}
-	return tableCols{
-		dot: 18, name: name, server: 160, port: 52, ip: 112, geo: 176,
-		network: 84, security: 86, delay: 76, jitter: 62, loss: 44, score: 78, arrow: 12,
-	}
-}
-
-func table(c *ui.Context, a *app.App, st *State, snap app.Snapshot, tk *theme.Tokens) {
+func toolbarAndTable(c *ui.Context, a *app.App, st *State, snap app.Snapshot, t *ui.Theme) {
 	ui.Column(c).Grow(1).Basis(0).MinHeight(0).Clip().
-		Background(tk.BgContainer).Border(1, tk.BorderSecondary).Radius(tk.BorderRadiusLG).
+		Background(t.Surface).Border(1, t.Border).Radius(t.Space(3)).
 		Children(func() {
-			cols := newTableCols(c)
-			tableHeader(c, cols, tk)
-			layout.Divider(c, layout.DividerProps{})
-
-			rows := filterRows(snap.Rows, filterMode(st.Filter), st.Query)
-			if len(rows) == 0 {
-				ui.Column(c).Grow(1).Basis(0).Center().Children(func() {
-					emptyState(c, snap, tk)
+			toolbar(c, a, st, snap, t)
+			ui.Box(c).Height(1).Background(t.Border)
+			switch {
+			case len(snap.Rows) == 0:
+				emptyState(c, t, false)
+			case len(filterRows(snap.Rows, filterMode(st.Filter), st.Query)) == 0:
+				emptyState(c, t, true)
+			default:
+				rows := filterRows(snap.Rows, filterMode(st.Filter), st.Query)
+				windowWidth, _ := c.Size()
+				components.ScrollView(c, components.ScrollViewOptions{Axes: components.ScrollBoth}).
+					Grow(1).Basis(0).Children(func() {
+					ui.Column(c).Width(max(960, windowWidth-54)).Children(func() {
+						components.Table(c, nil, tableColumnsFor(windowWidth), func() {
+							for _, item := range rows {
+								tableRow(c, a, item, t, snap.Selected)
+							}
+						})
+					})
 				})
-				return
 			}
-			layout.ScrollArea(c, layout.ScrollAreaProps{Direction: layout.Vertical, Fade: true}, func() {
-				for _, item := range rows {
-					tableRow(c, a, item, cols, tk, snap.Selected)
-				}
-				ui.Box(c).Height(6)
-			}).Grow(1).Basis(0)
 		})
 }
 
-func headerCell(c *ui.Context, label string, width float32, tk *theme.Tokens) {
-	display.Text(c, label, display.TextProps{Type: display.TextSecondary, FontSize: 11}).
-		Width(width).Shrink(0).SingleLine()
-}
-
-func tableHeader(c *ui.Context, cols tableCols, tk *theme.Tokens) {
-	ui.Row(c).Height(36).PaddingX(14).AlignItems(ui.Center).Children(func() {
-		headerCell(c, "", cols.dot, tk)
-		headerCell(c, "节点", cols.name, tk)
-		headerCell(c, "地址", cols.server, tk)
-		headerCell(c, "端口", cols.port, tk)
-		headerCell(c, "IP", cols.ip, tk)
-		headerCell(c, "地区 / 运营商", cols.geo, tk)
-		headerCell(c, "传输协议", cols.network, tk)
-		headerCell(c, "TLS", cols.security, tk)
-		headerCell(c, "延迟", cols.delay, tk)
-		headerCell(c, "抖动", cols.jitter, tk)
-		headerCell(c, "丢包", cols.loss, tk)
-		headerCell(c, "评分", cols.score, tk)
-		headerCell(c, "", cols.arrow, tk)
-	})
-}
-
-func tableRow(c *ui.Context, a *app.App, item filteredRow, cols tableCols, tk *theme.Tokens, selected int) {
-	row := item.row
-	rowEl := ui.Row(c).Height(tableRowHeight).PaddingX(14).AlignItems(ui.Center).
-		BorderWidth(0, 0, 1, 0).BorderColor(tk.FillQuaternary).Cursor(ui.CursorPointer)
-	switch {
-	case item.index == selected:
-		rowEl.Background(tk.FillSecondary)
-	case rowEl.Hovered():
-		rowEl.Background(tk.FillTertiary)
+func toolbar(c *ui.Context, a *app.App, st *State, snap app.Snapshot, t *ui.Theme) {
+	rows := snap.Rows
+	labels := []string{
+		fmt.Sprintf("全部 %d", len(rows)),
+		fmt.Sprintf("健康 %d", countRows(rows, healthyFilter)),
+		fmt.Sprintf("需改善 %d", countRows(rows, needsWorkFilter)),
+		fmt.Sprintf("不可达 %d", countRows(rows, failedFilter)),
 	}
-	rowEl.OnClick(func() { a.Select(item.index) })
+	filter := st.Filter
+	ui.Row(c).Padding(12, 10).Gap(10).AlignItems(ui.Center).Children(func() {
+		components.Tabs(c, &filter, components.TabsHighlight, labels...)
+		st.Filter = filter
 
-	rowEl.Children(func() {
-		statusCell(c, row, cols.dot, tk)
-		nameCell(c, row, cols.name, tk)
-		serverCell(c, row, cols.server, tk)
-		portCell(c, row, cols.port, tk)
-		ipCell(c, row, cols.ip, tk)
-		geoCell(c, row, cols.geo, tk)
-		networkCell(c, row, cols.network, tk)
-		securityCell(c, row, cols.security, tk)
-		latencyCell(c, row, cols.delay, tk)
-		textCell(c, jitterText(row), cols.jitter, tk.TextSecondary, tk)
-		textCell(c, lossText(row), cols.loss, lossTone(row, tk), tk)
-		scoreCell(c, row, cols.score, tk)
-		ui.Row(c).Width(cols.arrow).Shrink(0).AlignItems(ui.Center).Children(func() {
-			display.Icon(c, lucide.ChevronRight(), display.IconProps{Size: display.IconSmall}).TextColor(tk.TextQuaternary)
+		ui.Box(c).Width(226).Children(func() {
+			components.TextBox(c, &st.Query, components.TextBoxOptions{LeadingIcon: lucide.Search()}).
+				Label("搜索节点").Placeholder("搜索节点 / 域名 / IP / 地区")
 		})
-	})
-}
-
-func statusCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
-	ui.Row(c).Width(width).Shrink(0).AlignItems(ui.Center).Children(func() {
-		ui.Box(c).Size(8, 8).Radius(4).Background(toneOf(row, tk))
-	})
-}
-
-func nameCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
-	ui.Row(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(6).AlignItems(ui.Center).Children(func() {
-		display.Tag(c, row.Node.ProtocolLabel(), display.TagProps{
-			Variant: display.TagOutlined, Size: theme.Small, Color: display.TagGray,
-		}).Shrink(0)
-		display.Text(c, row.Node.Name, display.TextProps{FontSize: 13}).Grow(1).MinWidth(0).MaxWidth(cellTextWidth(width)).SingleLine()
-	})
-}
-
-func serverCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
-	ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1).Children(func() {
-		display.Text(c, row.Node.Server, display.TextProps{Code: true, FontSize: 12}).Width(cellTextWidth(width)).SingleLine()
-		detail := firstNonEmpty(row.Node.Host, row.Node.Cipher)
-		if detail != "" {
-			display.Text(c, detail, display.TextProps{Type: display.TextSecondary, FontSize: 11}).Width(cellTextWidth(width)).SingleLine()
+		ui.Spacer(c)
+		if snap.Status == app.StatusProbing {
+			components.Button(c, "停止", components.ButtonGhost).OnClick(a.Stop)
 		}
+		reprobe := components.Button(c, "", components.ButtonGhost)
+		reprobe.Label("重新检测")
+		reprobe.OnClick(a.Reprobe)
+		reprobe.Children(func() {
+			ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+				components.Icon(c, lucide.RefreshCw).Size(14, 14)
+				components.Text(c, "重新检测")
+			})
+		})
 	})
 }
 
-func portCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
-	ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1).Children(func() {
-		display.Text(c, strconv.Itoa(row.Node.Port), display.TextProps{Code: true, FontSize: 12}).Width(cellTextWidth(width)).SingleLine()
-		display.Text(c, carrierOf(row.Node), display.TextProps{Type: display.TextSecondary, FontSize: 11}).Width(cellTextWidth(width)).SingleLine()
+func tableRow(c *ui.Context, a *app.App, item filteredRow, t *ui.Theme, selected int) {
+	row := item.row
+	el := components.TableRow(c, item.index, row.Node.Name, item.index == selected, func(col int) {
+		cells(c, row, col, t)
 	})
-}
-
-func ipCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
-	ip := row.Result.IP
-	family := row.Result.Family
-	if ip == "" {
-		ip = "—"
-		family = ""
+	el.MinHeight(44).OnClick(func() { a.Select(item.index) })
+	if el.Hovered() && item.index != selected {
+		el.Background(t.SurfaceHover)
 	}
-	ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1).Children(func() {
-		display.Text(c, ip, display.TextProps{Code: true, FontSize: 12}).Width(cellTextWidth(width)).SingleLine()
-		hint := family
+}
+
+func cells(c *ui.Context, row app.Row, col int, t *ui.Theme) {
+	switch col {
+	case 0:
+		ui.Row(c).Gap(6).AlignItems(ui.Center).MinWidth(0).Children(func() {
+			ui.Box(c).Size(7, 7).Radius(4).Background(toneOf(row, t)).Shrink(0)
+			components.Badge(c, row.Node.ProtocolLabel(), components.BadgeOptions{Tone: components.BadgeNeutral})
+			components.Text(c, row.Node.Name).FontSize(12.5).SingleLine().MinWidth(0).Grow(1)
+		})
+	case 1:
+		stack(c, func() {
+			components.Text(c, row.Node.Server).FontSize(12).SingleLine()
+			if detail := firstNonEmpty(row.Node.Host, row.Node.Cipher); detail != "" {
+				muted(c, t, detail, 11)
+			}
+		})
+	case 2:
+		stack(c, func() {
+			components.Text(c, strconv.Itoa(row.Node.Port)).FontSize(12).SingleLine()
+			muted(c, t, carrierOf(row.Node), 11)
+		})
+	case 3:
+		ip := row.Result.IP
+		if ip == "" {
+			ip = "—"
+		}
+		hint := row.Result.Family
 		if row.Result.DNS > 0 {
 			hint += fmt.Sprintf(" · DNS %dms", row.Result.DNS.Milliseconds())
 		}
-		if hint == "" {
-			hint = "待解析"
-		}
-		display.Text(c, hint, display.TextProps{Type: display.TextSecondary, FontSize: 11}).Width(cellTextWidth(width)).SingleLine()
-	})
-}
-
-func geoCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
-	ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1).Children(func() {
-		display.Text(c, row.Result.GeoLabel(), display.TextProps{FontSize: 12}).Width(cellTextWidth(width)).SingleLine()
-		kind := row.Result.IPTypeLabel()
-		if kind == "" {
-			kind = "—"
-		}
-		display.Text(c, kind, display.TextProps{Type: display.TextSecondary, FontSize: 11}).Width(cellTextWidth(width)).SingleLine()
-	})
-}
-
-func networkCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
-	network := strings.ToUpper(row.Node.Network)
-	if network == "" {
-		network = "TCP"
-	}
-	sub := row.Node.Path
-	if sub == "" {
-		sub = row.Node.ServiceName
-	}
-	if sub == "" {
-		sub = row.Node.Flow
-	}
-	ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1).Children(func() {
-		display.Text(c, network, display.TextProps{FontSize: 12}).Width(cellTextWidth(width)).SingleLine()
-		if sub != "" {
-			display.Text(c, sub, display.TextProps{Type: display.TextSecondary, FontSize: 11, Code: true}).Width(cellTextWidth(width)).SingleLine()
-		}
-	})
-}
-
-func securityCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
-	label := securityLabel(row.Node.Security)
-	color := tk.Text
-	switch label {
-	case "REALITY":
-		color = tk.Primary
-	case "TLS":
-		color = tk.Text
-	case "无":
-		color = tk.TextSecondary
-	}
-	ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1).Children(func() {
-		ui.Text(c, label).FontSize(12).TextColor(color).Width(cellTextWidth(width)).SingleLine()
-		if sni := firstNonEmpty(row.Node.ServerName, row.Node.Host); sni != "" {
-			display.Text(c, sni, display.TextProps{Type: display.TextSecondary, FontSize: 11, Code: true}).Width(cellTextWidth(width)).SingleLine()
-		}
-	})
-}
-
-// latencyCell shows the local average and, once requested, the median from the
-// worldwide measurement underneath it.
-func latencyCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
-	el := ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1)
-	el.Children(func() {
-		ui.Text(c, delayText(row)).FontSize(12).TextColor(toneOf(row, tk)).
-			Width(cellTextWidth(width)).SingleLine()
-		switch {
-		case row.RemoteBusy:
-			display.Text(c, "全球…", display.TextProps{Type: display.TextSecondary, FontSize: 10}).
-				Width(cellTextWidth(width)).SingleLine()
-		case row.RemoteErr != "":
-			display.Text(c, "全球失败", display.TextProps{Type: display.TextDanger, FontSize: 10}).
-				Width(cellTextWidth(width)).SingleLine()
-		case row.Remote != nil:
-			label := "全球 —"
-			if row.Remote.Reachable > 0 && row.Remote.Median > 0 {
-				label = "全球 " + compactDuration(row.Remote.Median)
-			}
-			display.Text(c, label, display.TextProps{Type: display.TextInfo, FontSize: 10}).
-				Width(cellTextWidth(width)).SingleLine()
-		}
-	})
-	if row.Remote != nil {
-		overlay.Tooltip(c, el, row.Remote.Summary(), overlay.TooltipProps{Placement: overlay.Bottom})
-	}
-}
-
-func textCell(c *ui.Context, value string, width float32, color ui.Color, tk *theme.Tokens) {
-	ui.Box(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Children(func() {
-		ui.Text(c, value).FontSize(12).TextColor(color).Width(cellTextWidth(width)).SingleLine()
-	})
-}
-
-func scoreCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
-	ui.Row(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(6).AlignItems(ui.Center).Children(func() {
-		switch {
-		case !row.Probed:
-			display.Text(c, "…", display.TextProps{Type: display.TextSecondary, FontSize: 12})
-			return
-		case row.Result.UDPOnly:
-			display.Tag(c, "未探测", display.TagProps{
-				Variant: display.TagFilled, Size: theme.Small, Color: display.TagWarning,
-			})
-			return
-		case row.Result.Score == 0:
-			display.Text(c, "—", display.TextProps{Type: display.TextSecondary, FontSize: 12})
-			return
-		}
-		display.Tag(c, strconv.Itoa(row.Result.Score), display.TagProps{
-			Variant: display.TagFilled, Size: theme.Small, Color: scoreTagColor(row.Result),
+		stack(c, func() {
+			components.Text(c, ip).FontSize(12).SingleLine()
+			muted(c, t, hint, 11)
 		})
-		display.Text(c, row.Result.Grade, display.TextProps{Type: display.TextSecondary, FontSize: 11}).SingleLine()
+	case 4:
+		stack(c, func() {
+			components.Text(c, row.Result.GeoLabel()).FontSize(12).SingleLine()
+			muted(c, t, row.Result.IPTypeLabel(), 11)
+		})
+	case 5:
+		network := strings.ToUpper(row.Node.Network)
+		if network == "" {
+			network = "TCP"
+		}
+		stack(c, func() {
+			components.Text(c, network).FontSize(12).SingleLine()
+			if detail := transportDetail(row.Node); detail != "" {
+				muted(c, t, detail, 11)
+			}
+		})
+	case 6:
+		label := securityLabel(row.Node.Security)
+		color := t.Text
+		switch label {
+		case "REALITY":
+			color = t.Accent
+		case "无":
+			color = t.TextMuted
+		}
+		stack(c, func() {
+			components.Text(c, label).FontSize(12).TextColor(color).SingleLine()
+			if sni := firstNonEmpty(row.Node.ServerName, row.Node.Host); sni != "" {
+				muted(c, t, sni, 11)
+			}
+		})
+	case 7:
+		ui.Column(c).Gap(1).AlignItems(ui.End).Children(func() {
+			components.Text(c, delayText(row)).FontSize(12).TextColor(toneOf(row, t)).SingleLine()
+			if row.RemoteBusy {
+				muted(c, t, "全球…", 10)
+			} else if row.RemoteErr != "" {
+				components.Text(c, "全球失败").FontSize(10).TextColor(t.Danger).SingleLine()
+			} else if row.Remote != nil {
+				label := "全球 —"
+				if row.Remote.Reachable > 0 && row.Remote.Median > 0 {
+					label = "全球 " + compactDuration(row.Remote.Median)
+				}
+				components.Text(c, label).FontSize(10).TextColor(t.Accent).SingleLine()
+			}
+		})
+	case 8:
+		components.Text(c, jitterText(row)).FontSize(12).TextColor(t.TextMuted).SingleLine()
+	case 9:
+		components.Text(c, lossText(row)).FontSize(12).TextColor(lossTone(row, t)).SingleLine()
+	case 10:
+		scoreCell(c, row, t)
+	}
+}
+
+func stack(c *ui.Context, build func()) {
+	ui.Column(c).Gap(1).MinWidth(0).Children(build)
+}
+
+func muted(c *ui.Context, t *ui.Theme, value string, size float32) ui.Element {
+	if value == "" {
+		value = "—"
+	}
+	return components.Text(c, value).FontSize(size).TextColor(t.TextMuted).SingleLine()
+}
+
+func scoreCell(c *ui.Context, row app.Row, t *ui.Theme) {
+	switch {
+	case !row.Probed:
+		components.Text(c, "…").FontSize(12).TextColor(t.TextMuted)
+	case row.Result.UDPOnly:
+		components.Badge(c, "未探测", components.BadgeOptions{Tone: components.BadgeWarning})
+	case row.Result.Score == 0:
+		components.Text(c, "—").FontSize(12).TextColor(t.TextMuted)
+	default:
+		tone := components.BadgeSuccess
+		switch {
+		case row.Result.Score < 50:
+			tone = components.BadgeDanger
+		case row.Result.Score < 70:
+			tone = components.BadgeWarning
+		}
+		components.Badge(c, fmt.Sprintf("%d %s", row.Result.Score, row.Result.Grade),
+			components.BadgeOptions{Tone: tone})
+	}
+}
+
+func emptyState(c *ui.Context, t *ui.Theme, filtered bool) {
+	title, desc := "粘贴订阅链接，开始节点体检", "解析 Clash / Xray / sing-box 订阅，逐节点测量 TCP 握手、抖动、丢包与 TLS 证书，并查询 IP 归属。"
+	if filtered {
+		title, desc = "没有匹配的节点", "换一个筛选条件，或清空搜索框。"
+	}
+	ui.Column(c).Grow(1).Basis(0).Center().Padding(48).Gap(10).Children(func() {
+		ui.Row(c).Size(46, 46).Radius(14).Background(t.Accent.Alpha(.1)).Center().Children(func() {
+			components.Icon(c, lucide.Globe).Size(24, 24).TextColor(t.Accent)
+		})
+		components.Text(c, title).FontSize(16).Bold()
+		components.Text(c, desc).FontSize(12).TextColor(t.TextMuted).Wrap().MaxWidth(520)
 	})
+}
+
+func carrierOf(n model.Node) string {
+	if probe.UDPTransport(n) {
+		return "UDP"
+	}
+	return "TCP"
+}
+
+func transportDetail(n model.Node) string {
+	if n.Path != "" {
+		return n.Path
+	}
+	if n.ServiceName != "" {
+		return n.ServiceName
+	}
+	if n.Flow != "" {
+		return n.Flow
+	}
+	return ""
+}
+
+func securityLabel(security string) string {
+	switch strings.ToLower(strings.TrimSpace(security)) {
+	case "", "none":
+		return "无"
+	default:
+		return strings.ToUpper(security)
+	}
 }
 
 func delayText(row app.Row) string {
@@ -363,14 +351,6 @@ func delayText(row app.Row) string {
 	return fmt.Sprintf("%d ms", row.Result.Avg.Milliseconds())
 }
 
-// compactDuration keeps the narrow latency cell readable for slow nodes.
-func compactDuration(d time.Duration) string {
-	if d >= time.Second {
-		return fmt.Sprintf("%.1fs", d.Seconds())
-	}
-	return fmt.Sprintf("%dms", d.Milliseconds())
-}
-
 func jitterText(row app.Row) string {
 	if !row.Probed || !row.Result.Reachable {
 		return "—"
@@ -379,7 +359,10 @@ func jitterText(row app.Row) string {
 }
 
 func lossText(row app.Row) string {
-	if !row.Probed || !row.Result.Reachable {
+	if !row.Probed {
+		return "—"
+	}
+	if !row.Result.Reachable {
 		if row.Result.UDPOnly {
 			return "—"
 		}
@@ -388,77 +371,36 @@ func lossText(row app.Row) string {
 	return fmt.Sprintf("%.0f%%", row.Result.Loss*100)
 }
 
-func lossTone(row app.Row, tk *theme.Tokens) ui.Color {
+func lossTone(row app.Row, t *ui.Theme) ui.Color {
 	if !row.Probed || !row.Result.Reachable {
-		return tk.TextSecondary
+		return t.TextMuted
 	}
 	if row.Result.Loss > 0 {
-		return tk.Warning
+		return t.Warning
 	}
-	return tk.TextSecondary
+	return t.TextMuted
 }
 
-func toneOf(row app.Row, tk *theme.Tokens) ui.Color {
+func toneOf(row app.Row, t *ui.Theme) ui.Color {
 	switch {
 	case !row.Probed:
-		return tk.TextQuaternary
+		return t.TextMuted
 	case row.Result.UDPOnly:
-		return tk.Warning
+		return t.Warning
 	case !row.Result.Reachable:
-		return tk.Error
-	case row.Result.Score >= 85:
-		return tk.Success
+		return t.Danger
 	case row.Result.Score >= 70:
-		return tk.Success
+		return t.Success
 	case row.Result.Score >= 50:
-		return tk.Warning
+		return t.Warning
 	default:
-		return tk.Error
+		return t.Danger
 	}
 }
 
-func scoreTagColor(r probe.Result) display.TagColor {
-	switch {
-	case r.UDPOnly:
-		return display.TagWarning
-	case r.Score >= 70:
-		return display.TagSuccess
-	case r.Score >= 50:
-		return display.TagWarning
-	default:
-		return display.TagError
+func compactDuration(d time.Duration) string {
+	if d >= time.Second {
+		return fmt.Sprintf("%.1fs", d.Seconds())
 	}
-}
-
-func emptyState(c *ui.Context, snap app.Snapshot, tk *theme.Tokens) {
-	if len(snap.Rows) == 0 {
-		display.Empty(c, display.EmptyProps{
-			Icon:        lucide.Globe(),
-			Title:       "粘贴订阅链接，开始节点体检",
-			Description: "解析 Clash / Xray / sing-box 订阅，逐个节点测量 TCP 握手、抖动、丢包与 TLS 证书，并查询 IP 归属和机房标记。",
-		})
-		return
-	}
-	display.Empty(c, display.EmptyProps{
-		Icon:        lucide.ListFilter(),
-		Title:       "没有匹配的节点",
-		Description: "换一个筛选条件，或清空搜索框。",
-	})
-}
-
-// carrierOf distinguishes TCP from the QUIC-based protocols.
-func carrierOf(n model.Node) string {
-	if probe.UDPTransport(n) {
-		return "UDP"
-	}
-	return "TCP"
-}
-
-func securityLabel(security string) string {
-	switch strings.ToLower(strings.TrimSpace(security)) {
-	case "", "none":
-		return "无"
-	default:
-		return strings.ToUpper(security)
-	}
+	return fmt.Sprintf("%dms", d.Milliseconds())
 }

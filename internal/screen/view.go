@@ -1,6 +1,6 @@
-// Package screen draws the app: a subscription bar, a summary strip, a table
-// of nodes and a detail drawer. It only reads app.Snapshot and calls app
-// methods, so the UI can be driven headlessly in tests.
+// Package screen draws the app with Onevra's warm native design system: a
+// branded top bar, a subscription card, summary cards, a data table and a
+// full-page node detail. It only reads app.Snapshot and calls app methods.
 package screen
 
 import (
@@ -9,13 +9,9 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/lobehub/lobe-mygo/pkg/action"
-	"github.com/lobehub/lobe-mygo/pkg/display"
-	"github.com/lobehub/lobe-mygo/pkg/feedback"
-	"github.com/lobehub/lobe-mygo/pkg/field"
-	"github.com/lobehub/lobe-mygo/pkg/lucide"
-	"github.com/lobehub/lobe-mygo/pkg/overlay"
-	"github.com/lobehub/lobe-mygo/pkg/theme"
+	"github.com/oneo-me/onevra/source/components"
+	"github.com/oneo-me/onevra/source/icons/lucide"
+	"github.com/oneo-me/onevra/source/theme"
 
 	"ipscan/internal/app"
 )
@@ -29,184 +25,182 @@ type State struct {
 // View is the root of the window.
 func View(c *ui.Context, a *app.App, st *State) {
 	theme.Apply(c)
-	tk := theme.TokensOf(c)
+	t := c.Theme()
 	a.SetNotifier(c.Invalidate)
 	snap := a.Snapshot()
 
-	ui.Column(c).Fill().Background(tk.BgLayout).Children(func() {
-		ui.Column(c).Grow(1).Basis(0).Padding(20, 16).Gap(12).Children(func() {
-			subscriptionBar(c, a, tk)
-			statusStrip(c, a, snap, tk)
-			if len(snap.Rows) > 0 {
-				statsRow(c, snap, tk)
+	ui.Column(c).Fill().Background(t.Background).Children(func() {
+		topBar(c, snap, t)
+		ui.Column(c).Grow(1).Basis(0).Padding(26, 20).Gap(16).Children(func() {
+			if snap.Selected >= 0 && snap.Selected < len(snap.Rows) {
+				detailPage(c, a, snap, t)
+				return
 			}
-			toolbar(c, a, st, snap, tk)
-			table(c, a, st, snap, tk)
-			footer(c, snap, tk)
+			hero(c, snap, t)
+			subscriptionCard(c, a, t)
+			statusLine(c, a, snap, t)
+			if len(snap.Rows) > 0 {
+				statsRow(c, snap, t)
+			}
+			toolbarAndTable(c, a, st, snap, t)
+			footer(c, snap, t)
 		})
-		detailDrawer(c, a, snap, tk)
 	})
 }
 
-func subscriptionBar(c *ui.Context, a *app.App, tk *theme.Tokens) {
-	ui.Row(c).Padding(12).Gap(10).AlignItems(ui.Center).
-		Background(tk.BgContainer).Border(1, tk.BorderSecondary).Radius(tk.BorderRadiusLG).
+func topBar(c *ui.Context, snap app.Snapshot, t *ui.Theme) {
+	ui.Row(c).Height(56).Padding(16, 26).AlignItems(ui.Center).Gap(10).
+		Background(t.Surface).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).
 		Children(func() {
-			display.Icon(c, lucide.Link(), display.IconProps{Size: display.IconMiddle}).TextColor(tk.TextTertiary)
-			ui.Column(c).Grow(1).Basis(0).AlignItems(ui.Stretch).Children(func() {
-				input := field.Input(c, a.Input, field.InputProps{
-					Variant:     field.InputOutlined,
-					Size:        theme.Large,
-					Placeholder: "粘贴 Clash / Xray / sing-box 订阅链接，或本地文件路径",
-				})
-				input.OnSubmit(a.Load)
+			ui.Row(c).Size(28, 28).Radius(8).Background(t.Accent).Center().Children(func() {
+				components.Icon(c, lucide.Activity).Size(16, 16).TextColor(t.AccentText)
 			})
-			action.Button(c, "粘贴", action.ButtonProps{Size: theme.Large}).
+			components.Text(c, "节点体检").FontSize(15).Bold()
+			label, tone := statusBadge(snap)
+			components.Badge(c, label, components.BadgeOptions{Tone: tone})
+			ui.Spacer(c)
+			components.Text(c, "本地探测 + Globalping").FontSize(11.5).TextColor(t.TextMuted)
+		})
+}
+
+func statusBadge(snap app.Snapshot) (string, components.BadgeTone) {
+	switch snap.Status {
+	case app.StatusLoading, app.StatusProbing:
+		return "检测中", components.BadgeAccent
+	case app.StatusError:
+		return "出错", components.BadgeDanger
+	case app.StatusDone:
+		if len(snap.Rows) > 0 {
+			return "已完成", components.BadgeSuccess
+		}
+	}
+	return "待检测", components.BadgeNeutral
+}
+
+func hero(c *ui.Context, snap app.Snapshot, t *ui.Theme) {
+	ui.Row(c).AlignItems(ui.End).Gap(16).Children(func() {
+		ui.Column(c).Grow(1).Gap(4).Children(func() {
+			components.Text(c, "代理节点质量体检").FontSize(27).Bold()
+			components.Text(c, "订阅 → 节点 → 延迟 / 抖动 / TLS / IP 归属 / 全球探测").
+				FontSize(12.5).TextColor(t.TextMuted)
+		})
+		ui.Row(c).Gap(6).Children(func() {
+			if snap.Format != "" {
+				components.Badge(c, snap.Format, components.BadgeOptions{Tone: components.BadgeNeutral})
+			}
+			if snap.Status == app.StatusDone && len(snap.Rows) > 0 {
+				components.Badge(c, fmt.Sprintf("%d 个节点", len(snap.Rows)), components.BadgeOptions{Tone: components.BadgeAccent})
+			}
+		})
+	})
+}
+
+func subscriptionCard(c *ui.Context, a *app.App, t *ui.Theme) {
+	ui.Row(c).Padding(12).Gap(10).AlignItems(ui.Center).
+		Background(t.Surface).Border(1, t.Border).Radius(t.Space(3.5)).
+		Shadow(0, t.Space(.5), t.Space(4), 0, ui.RGBA(0, 0, 0, .05)).
+		Children(func() {
+			components.TextBox(c, a.Input, components.TextBoxOptions{
+				LeadingIcon: lucide.Link(),
+			}).Label("订阅链接").
+				Placeholder("粘贴 Clash / Xray / sing-box 订阅链接或本地文件路径").
+				Grow(1).OnSubmit(a.Load)
+
+			components.Button(c, "粘贴", components.ButtonGhost).
 				OnClick(func() { *a.Input = strings.TrimSpace(c.ReadClipboard()) })
-			button := action.StyleButton(c, ui.ButtonBase(c), "", action.ButtonProps{Variant: action.Primary, Size: theme.Large})
-			button.OnClick(a.Load)
-			button.Children(func() {
+
+			start := components.Button(c, "", components.ButtonPrimary)
+			start.Label("开始体检")
+			start.OnClick(a.Load)
+			start.Children(func() {
 				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-					display.Icon(c, lucide.Zap(), display.IconProps{Size: display.IconSmall})
-					ui.Text(c, "开始体检")
+					components.Icon(c, lucide.Zap).Size(15, 15)
+					components.Text(c, "开始体检")
 				})
 			})
 		})
 }
 
-func statusStrip(c *ui.Context, a *app.App, snap app.Snapshot, tk *theme.Tokens) {
+func statusLine(c *ui.Context, a *app.App, snap app.Snapshot, t *ui.Theme) {
 	switch snap.Status {
 	case app.StatusError:
-		feedback.Alert(c, snap.Message, feedback.AlertProps{
-			Type: feedback.Error, Variant: feedback.Soft,
-			Description: "链接需可公开访问；本地文件可用完整路径。",
-		})
-	case app.StatusLoading, app.StatusProbing:
-		percent := float32(0)
-		if snap.Total > 0 {
-			percent = float32(snap.Done) / float32(snap.Total) * 100
-		}
-		ui.Row(c).Gap(12).AlignItems(ui.Center).Padding(2, 2).Children(func() {
-			feedback.Spin(c, feedback.SpinProps{Size: theme.Small}, nil)
-			display.Text(c, snap.Message, display.TextProps{Type: display.TextSecondary, FontSize: 13}).Grow(1).SingleLine()
-			ui.Column(c).Width(220).Children(func() {
-				feedback.Progress(c, percent, feedback.ProgressProps{Size: theme.Small, Color: tk.Primary})
+		ui.Row(c).Padding(10, 14).Gap(10).AlignItems(ui.Center).
+			Background(t.Danger.Alpha(.08)).Border(1, t.Danger.Alpha(.25)).Radius(t.Radius).
+			Children(func() {
+				components.Icon(c, lucide.CircleX).Size(16, 16).TextColor(t.Danger)
+				components.Text(c, snap.Message).FontSize(12.5).TextColor(t.Danger).Wrap().Grow(1)
+				components.Text(c, "链接需可公开访问；本地文件可用完整路径。").FontSize(11.5).TextColor(t.TextMuted)
 			})
-			display.Text(c, fmt.Sprintf("%d/%d", snap.Done, snap.Total), display.TextProps{Type: display.TextSecondary, FontSize: 12, Code: true})
-			action.Button(c, "停止", action.ButtonProps{Variant: action.Text, Size: theme.Small}).OnClick(a.Stop)
+	case app.StatusLoading, app.StatusProbing:
+		percent := 0.0
+		if snap.Total > 0 {
+			percent = float64(snap.Done) / float64(snap.Total)
+		}
+		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+			components.Spinner(c, components.SpinnerRing).Size(16, 16)
+			components.Text(c, snap.Message).FontSize(12.5).TextColor(t.TextMuted).Grow(1).SingleLine()
+			ui.Box(c).Width(200).Children(func() {
+				components.Progress(c, percent)
+			})
+			components.Text(c, fmt.Sprintf("%d/%d", snap.Done, snap.Total)).FontSize(11.5).TextColor(t.TextMuted)
+			components.Button(c, "停止", components.ButtonGhost).OnClick(a.Stop)
 		})
 	default:
 		if len(snap.Rows) == 0 {
-			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				display.Text(c, "支持 Clash YAML、Xray / sing-box JSON、vmess / vless / trojan / ss / hysteria2 链接及 base64 订阅",
-					display.TextProps{Type: display.TextSecondary, FontSize: 12, Rows: 1})
-				ui.Spacer(c)
-				if snap.Format != "" {
-					display.Tag(c, snap.Format, display.TagProps{Variant: display.TagOutlined, Size: theme.Small})
-				}
-			})
 			return
 		}
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			display.Icon(c, lucide.CircleCheck(), display.IconProps{Size: display.IconSmall}).TextColor(tk.Success)
-			display.Text(c, snap.Message, display.TextProps{Type: display.TextSecondary, FontSize: 13}).SingleLine()
-			if snap.Format != "" {
-				display.Tag(c, snap.Format, display.TagProps{Variant: display.TagOutlined, Size: theme.Small})
+			components.Icon(c, lucide.CircleCheck).Size(15, 15).TextColor(t.Success)
+			components.Text(c, snap.Message).FontSize(12.5).TextColor(t.TextMuted).SingleLine()
+			if len(snap.Warnings) > 0 {
+				components.Badge(c, fmt.Sprintf("跳过 %d 条", len(snap.Warnings)), components.BadgeOptions{Tone: components.BadgeWarning})
 			}
-			warningsTag(c, snap, tk)
-			geoTag(c, snap)
+			if snap.GeoNote != "" {
+				components.Badge(c, "归属查询失败", components.BadgeOptions{Tone: components.BadgeWarning})
+			}
 			ui.Spacer(c)
-			display.Text(c, "耗时 "+formatElapsed(snap.Elapsed), display.TextProps{Type: display.TextSecondary, FontSize: 12, Code: true})
+			components.Text(c, "耗时 "+formatElapsed(snap.Elapsed)).FontSize(11.5).TextColor(t.TextMuted)
 		})
 	}
 }
 
-func warningsTag(c *ui.Context, snap app.Snapshot, tk *theme.Tokens) {
-	if len(snap.Warnings) == 0 {
-		return
-	}
-	shown := snap.Warnings
-	if len(shown) > 6 {
-		shown = shown[:6]
-	}
-	tag := display.Tag(c, fmt.Sprintf("跳过 %d 条", len(snap.Warnings)), display.TagProps{
-		Variant: display.TagFilled, Color: display.TagWarning, Size: theme.Small,
-	})
-	overlay.Tooltip(c, tag, strings.Join(shown, "\n"), overlay.TooltipProps{Placement: overlay.Bottom})
-}
-
-// geoTag explains a missing IP registry lookup instead of leaving every
-// region cell at "—" without a reason.
-func geoTag(c *ui.Context, snap app.Snapshot) {
-	if snap.GeoNote == "" || len(snap.Rows) == 0 {
-		return
-	}
-	tag := display.Tag(c, "归属查询失败", display.TagProps{
-		Variant: display.TagOutlined, Color: display.TagWarning, Size: theme.Small,
-	})
-	overlay.Tooltip(c, tag, snap.GeoNote, overlay.TooltipProps{Placement: overlay.Bottom})
-}
-
-func statsRow(c *ui.Context, snap app.Snapshot, tk *theme.Tokens) {
-	health := float32(0)
+func statsRow(c *ui.Context, snap app.Snapshot, t *ui.Theme) {
+	reachPct := 0.0
 	if snap.Stats.Total > 0 {
-		health = float32(snap.Stats.Reachable) / float32(snap.Stats.Total) * 100
+		reachPct = float64(snap.Stats.Reachable) / float64(snap.Stats.Total) * 100
 	}
 	ui.Row(c).Gap(12).AlignItems(ui.Stretch).Children(func() {
-		statCard(c, tk, "节点总数", fmt.Sprintf("%d", snap.Stats.Total), fmt.Sprintf("%d 条已检测", snap.Stats.Probed), tk.Text)
-		statCard(c, tk, "可达", fmt.Sprintf("%d", snap.Stats.Reachable), fmt.Sprintf("覆盖 %.0f%%", health), tk.Success)
-		statCard(c, tk, "平均延迟", formatDelay(snap.Stats.AvgDelay), "TCP 握手均值", tk.Primary)
-		statCard(c, tk, "平均评分", fmt.Sprintf("%d", snap.Stats.AvgScore), fmt.Sprintf("%d 个健康节点", snap.Stats.Healthy), tk.Warning)
+		statCard(c, t, lucide.Server, "节点总数", fmt.Sprintf("%d", snap.Stats.Total),
+			fmt.Sprintf("%d 条已检测", snap.Stats.Probed), t.Text)
+		statCard(c, t, lucide.Wifi, "TCP 可达", fmt.Sprintf("%d", snap.Stats.Reachable),
+			fmt.Sprintf("覆盖 %.0f%%", reachPct), t.Success)
+		statCard(c, t, lucide.Timer, "平均延迟", formatDelay(snap.Stats.AvgDelay),
+			"TCP 握手均值", t.Accent)
+		statCard(c, t, lucide.Gauge, "平均评分", fmt.Sprintf("%d", snap.Stats.AvgScore),
+			fmt.Sprintf("%d 个健康节点", snap.Stats.Healthy), t.Warning)
 	})
 }
 
-func statCard(c *ui.Context, tk *theme.Tokens, label, value, hint string, tone ui.Color) {
+func statCard(c *ui.Context, t *ui.Theme, icon func() *ui.SVG, label, value, hint string, tone ui.Color) {
 	ui.Column(c).Grow(1).Basis(0).Padding(14).Gap(3).
-		Background(tk.FillTertiary).Radius(tk.BorderRadius).Children(func() {
-		display.Text(c, label, display.TextProps{Type: display.TextSecondary, FontSize: 12})
-		ui.Text(c, value).FontSize(22).FontWeight(700).TextColor(tone)
-		display.Text(c, hint, display.TextProps{Type: display.TextSecondary, FontSize: 11})
-	})
-}
-
-func toolbar(c *ui.Context, a *app.App, st *State, snap app.Snapshot, tk *theme.Tokens) {
-	rows := snap.Rows
-	healthy := countRows(rows, healthyFilter)
-	needsWork := countRows(rows, needsWorkFilter)
-	failed := countRows(rows, failedFilter)
-	labels := []string{
-		fmt.Sprintf("全部 %d", len(rows)),
-		fmt.Sprintf("健康 %d", healthy),
-		fmt.Sprintf("需改善 %d", needsWork),
-		fmt.Sprintf("不可达 %d", failed),
-	}
-	filter := st.Filter
-	ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-		action.Segmented(c, &filter, labels, action.SegmentedProps{Size: theme.Small, Variant: action.SegmentedFilled})
-		st.Filter = filter
-
-		ui.Column(c).Width(250).AlignItems(ui.Stretch).Children(func() {
-			field.SearchBar(c, &st.Query, field.SearchBarProps{
-				Variant: field.InputOutlined, Size: theme.Small,
-				Placeholder: "搜索节点 / 域名 / IP / 地区",
+		Background(t.Surface).Border(1, t.Border).Radius(t.Space(3)).
+		Children(func() {
+			ui.Row(c).Gap(7).AlignItems(ui.Center).Children(func() {
+				components.Icon(c, icon).Size(14, 14).TextColor(t.TextMuted)
+				components.Text(c, label).FontSize(12).TextColor(t.TextMuted)
 			})
+			components.Text(c, value).FontSize(24).Bold().TextColor(tone)
+			components.Text(c, hint).FontSize(11).TextColor(t.TextMuted).SingleLine()
 		})
-		ui.Spacer(c)
-		if snap.Status == app.StatusProbing {
-			action.Button(c, "停止", action.ButtonProps{Variant: action.Default, Size: theme.Small}).OnClick(a.Stop)
-		}
-		reprobe := action.Button(c, "重新检测", action.ButtonProps{Variant: action.Default, Size: theme.Small})
-		reprobe.OnClick(a.Reprobe)
-		overlay.Tooltip(c, reprobe, "沿用当前订阅，重新探测所有节点", overlay.TooltipProps{Placement: overlay.Top})
-	})
 }
 
-func footer(c *ui.Context, snap app.Snapshot, tk *theme.Tokens) {
+func footer(c *ui.Context, snap app.Snapshot, t *ui.Theme) {
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-		display.Text(c, "IP 归属与风险标记来自 ip-api.com；其余参数取自订阅原文", display.TextProps{Type: display.TextSecondary, FontSize: 11})
+		components.Text(c, "IP 归属 ip-api.com → ipwho.is · 全球探测 Globalping").FontSize(11).TextColor(t.TextMuted)
 		ui.Spacer(c)
 		if len(snap.Rows) > 0 {
-			display.Text(c, fmt.Sprintf("%d 个节点 · 点击行查看全部参数", len(snap.Rows)), display.TextProps{Type: display.TextSecondary, FontSize: 11})
+			components.Text(c, fmt.Sprintf("%d 个节点 · 点击行查看全部参数", len(snap.Rows))).
+				FontSize(11).TextColor(t.TextMuted)
 		}
 	})
 }
@@ -218,9 +212,9 @@ func formatDelay(d time.Duration) string {
 	return fmt.Sprintf("%d ms", d.Milliseconds())
 }
 
-func formatDuration(d time.Duration) string {
-	if d <= 0 {
-		return "—"
+func formatElapsed(d time.Duration) string {
+	if d < time.Millisecond {
+		return "<1 ms"
 	}
 	if d < time.Second {
 		return fmt.Sprintf("%d ms", d.Milliseconds())
@@ -228,11 +222,11 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%.1f s", d.Seconds())
 }
 
-// formatElapsed never hides a zero wall time: an instant fake scan still took
-// less than a millisecond, not "unknown".
-func formatElapsed(d time.Duration) string {
-	if d < time.Millisecond {
-		return "<1 ms"
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
 	}
-	return formatDuration(d)
+	return ""
 }

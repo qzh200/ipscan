@@ -155,9 +155,10 @@ func TestViewShowsNodesAndDetail(t *testing.T) {
 
 	a.Load()
 	waitFor(t, tt, "3 个 TCP 可达")
+	tt.Advance(400 * time.Millisecond)
 
 	body := texts(tt)
-	for _, want := range []string{"香港 WS", "美国 Reality", "日本 SS", "德国 HY2", "优秀", "传输协议", "REALITY", "中国 香港", "Cloudflare"} {
+	for _, want := range []string{"香港 WS", "美国 Reality", "日本 SS", "德国 HY2", "优秀", "传输", "REALITY", "中国 香港", "Cloudflare"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in view:\n%s", want, body)
 		}
@@ -224,6 +225,7 @@ func TestNarrowWindowLongList(t *testing.T) {
 	tt.Frame()
 	a.Load()
 	waitFor(t, tt, "24 个 TCP 可达")
+	tt.Advance(400 * time.Millisecond)
 
 	_ = snapshot(t, tt, "ipscan-narrow.png")
 	tt.Wheel(590, 440, 0, 600)
@@ -352,9 +354,10 @@ func TestGlobalPingFromDrawer(t *testing.T) {
 		t.Fatalf("click global ping: %v", err)
 	}
 	waitFor(t, tt, "Helsinki · FI · Hetzner (AS24940)")
+	tt.Advance(400 * time.Millisecond)
 
 	body := texts(tt)
-	for _, want := range []string{"全球 51ms", "2/2 个探测点可达", "Helsinki · FI · Hetzner (AS24940)", "90 ms"} {
+	for _, want := range []string{"中位 51 ms", "2/2 个探测点可达", "Helsinki · FI · Hetzner (AS24940)", "90 ms"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q after global ping:\n%s", want, body)
 		}
