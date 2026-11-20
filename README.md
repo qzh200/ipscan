@@ -1,0 +1,59 @@
+# 节点体检 · ipscan
+
+一个纯 Go 原生桌面的代理节点质量检查器：粘贴 Clash / Xray / sing-box 订阅链接，
+解析全部节点，逐条测量 TCP 握手延迟、抖动、丢包与 TLS 握手/证书，并查询 IP 归属、
+运营商与机房/代理标记。界面用 [Lobe MyGo](https://mygo.lobehub.com/) 组件在 GPU 上绘制，
+不依赖 WebView。
+
+## 构建与运行
+
+```sh
+go build -o ipscan.exe ./cmd/ipscan
+./ipscan.exe
+```
+
+- Go 1.27+，Windows / macOS / Linux。
+- `third_party/yaml` 是 yaml.v3 的本地副本（MIT/Apache），让没有模块代理的环境也能离线构建。
+
+## 支持的订阅格式
+
+| 格式 | 识别方式 |
+| --- | --- |
+| 节点链接列表 | 每行一个 `vmess://` `vless://` `trojan://` `ss://` `ssr://` `hysteria2://` `tuic://` `socks5://` |
+| base64 订阅 | 自动解码（标准 / URL-safe，带或不带 padding），可嵌套检测内部格式 |
+| Clash / Mihomo YAML | `proxies[].type` 覆盖 vmess、vless、trojan、ss、ssr、hysteria、hysteria2、tuic、socks5、http |
+| Xray / v2ray JSON | `outbounds[].protocol` + `streamSettings`，读取 ws/grpc/h2/httpupgrade/xhttp 与 TLS/REALITY |
+| sing-box JSON | `outbounds[]`，读取 `tls`、`reality`、`utls`、`transport`、`obfs` |
+
+单条坏节点只会记入“跳过 N 条”，不影响其余节点。
+
+## 展示内容
+
+- 节点：名称、协议标签、服务器:端口、SNI/Host/路径、传输与安全方式。
+- IP 质量：解析出的 IPv4/IPv6、DNS 耗时、位置、运营商、ASN、机房/移动网络、代理标记。
+- 传输质量：TCP 握手 min/avg/max、抖动、丢包、评分（优秀/良好/一般/较差/不可达）。
+- TLS：版本、套件、证书 CN/签发者/到期、主机名校验；QUIC 类节点（hysteria2/tuic）
+  正常不监听 TCP，标为“未探测”并保留 IP 质量结果。
+
+IP 归属查询使用 ip-api.com 免费批量接口，只发送解析出的公网 IP；不可达时自动降级，
+不影响延迟/TLS 检测。
+
+## 代码结构
+
+```
+cmd/ipscan            窗口与依赖装配
+internal/model        节点模型（协议/传输/安全参数）
+internal/subscription 下载与格式识别、URI/Clash/Xray/sing-box 解析
+internal/probe        DNS、TCP、TLS 探测，评分与 IP 归属
+internal/scan         有限并发调度与进度上报
+internal/app          应用状态、异步任务与取消（不依赖 UI）
+internal/screen       仅绘图：订阅栏、统计、节点表、详情抽屉
+```
+
+## 测试
+
+```sh
+GOPROXY=off go test ./...
+```
+
+解析、探测（本地回环监听器）、并发调度与界面渲染均有测试。
