@@ -37,8 +37,10 @@ go build -o ipscan.exe ./cmd/ipscan
 - TLS：版本、套件、证书 CN/签发者/到期、主机名校验；QUIC 类节点（hysteria2/tuic）
   正常不监听 TCP，标为“未探测”并保留 IP 质量结果。
 
-节点名里的国家前缀换成正版国旗：`amArmenia 電門`、`gb|UK London`、`🇭🇰Hong Kong`
-都渲染成国旗图片 + 去掉前缀的名字，前缀不参与排序。国旗是内嵌的 249 张 PNG
+节点名里的国家前缀换成正版国旗：`amArmenia 電門`、`gb|UK London`、`KR 韩国 01`、
+`🇭🇰Hong Kong` 都渲染成国旗图片 + 去掉前缀的名字，前缀不参与排序。前缀与名字之间的分隔可以
+是空格（含不换行空格、全角空格）、`|`、`-`、`·`；国旗带 1px 描边，日本、韩国这类白色旗面
+也不会看成一个小圆点。国旗是内嵌的 249 张 PNG
 （`internal/flags`，来自 flagcdn.com / lipis flag-icons，MIT），不联网、也不依赖系统 emoji
 字体（Windows 的 Segoe UI Emoji 根本不含国旗字形，只会显示 AM/AU 两个字母）。
 

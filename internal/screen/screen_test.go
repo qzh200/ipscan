@@ -477,6 +477,8 @@ proxies:
   - {name: amArmenia 電門 藕豆子, type: vmess, server: am.example.com, port: 443, uuid: 33333333-3333-3333-3333-333333333333, cipher: auto, tls: true}
   - {name: auAustralia Sydney 🦘, type: vmess, server: au.example.com, port: 443, uuid: 44444444-4444-4444-4444-444444444444, cipher: auto, tls: true}
   - {name: hkHong Kong ミク, type: vmess, server: hk2.example.com, port: 443, uuid: 55555555-5555-5555-5555-555555555555, cipher: auto, tls: true}
+  - {name: "KR\u00a0韩国 01 [世宗电信 ISP]-test", type: vmess, server: kr.example.com, port: 443, uuid: 66666666-6666-6666-6666-666666666666, cipher: auto, tls: true}
+  - {name: 日本01-test, type: vmess, server: jp2.example.com, port: 443, uuid: 77777777-7777-7777-7777-777777777777, cipher: auto, tls: true}
 `
 	a := app.New(fakeFetcher{body: []byte(fixture)}, fakeScanner{})
 	a.Remote = anycastPinger{}
@@ -485,14 +487,17 @@ proxies:
 	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1180, 700)
 	tt.Frame()
 	a.Load()
-	waitFor(t, tt, "3 个 TCP 可达")
+	waitFor(t, tt, "5 个 TCP 可达")
 	tt.Advance(400 * time.Millisecond)
 
 	body := texts(tt)
-	for _, want := range []string{"Armenia 電門 藕豆子", "Australia Sydney 🦘", "Hong Kong ミク"} {
+	for _, want := range []string{"Armenia 電門 藕豆子", "Australia Sydney 🦘", "Hong Kong ミク", "韩国 01 [世宗电信 ISP]-test", "日本01-test"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in list:\n%s", want, body)
 		}
+	}
+	if strings.Contains(body, "KR") {
+		t.Fatalf("flag code should be replaced by the flag picture:\n%s", body)
 	}
 	_ = snapshot(t, tt, "ipscan-flags.png")
 

@@ -354,7 +354,6 @@ func cells(c *ui.Context, row app.Row, col int, t *ui.Theme) {
 	switch col {
 	case 0:
 		ui.Row(c).Gap(6).AlignItems(ui.Center).MinWidth(0).Children(func() {
-			ui.Box(c).Size(7, 7).Radius(4).Background(toneOf(row, t)).Shrink(0)
 			components.Badge(c, row.Node.ProtocolLabel(), components.BadgeOptions{Tone: components.BadgeNeutral})
 			nodeName(c, row.Node.Name, 12.5, false)
 		})

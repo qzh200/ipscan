@@ -99,7 +99,9 @@ func CountryPrefix(name string) (code, rest string, ok bool) {
 }
 
 func trimSeparators(s string) string {
-	return strings.TrimLeft(s, " \t|-／/｜·:：")
+	return strings.TrimLeftFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || strings.ContainsRune("|-／/｜·:：_~,、", r)
+	})
 }
 
 // isRegionalIndicator reports whether r is part of a flag emoji

@@ -20,10 +20,15 @@ func nodeName(c *ui.Context, name string, size float32, wrap bool) ui.Element {
 		rest = strings.TrimSpace(name)
 	}
 	if src := flags.Image(code); ok && src != nil {
-		height := float32(math.Round(float64(size) * .8))
+		height := float32(math.Round(float64(size) * .9))
 		row := ui.Row(c).Gap(6).AlignItems(ui.Center).MinWidth(0).Grow(1)
 		row.Children(func() {
-			ui.Image(c, src).Height(height).Shrink(0)
+			// A hairline keeps flags whose field is mostly white (JP, KR) from
+			// reading as a stray dot on the row.
+			frame := ui.Row(c).Shrink(0).Border(1, c.Theme().Border.Alpha(.8)).Radius(2).Clip()
+			frame.Children(func() {
+				ui.Image(c, src).Height(height)
+			})
 			text := components.Text(c, rest).FontSize(size).MinWidth(0).Grow(1)
 			if wrap {
 				text.Wrap()
