@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"image/png"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"ipscan/internal/model"
 	"ipscan/internal/probe"
 	"ipscan/internal/scan"
+	"ipscan/internal/subscription"
 )
 
 type fakeFetcher struct {
@@ -245,4 +247,48 @@ func TestErrorState(t *testing.T) {
 	a.Load()
 	waitFor(t, tt, "连接超时")
 	_ = snapshot(t, tt, "ipscan-error.png")
+}
+
+// TestEndToEndLocalNode goes through the real fetcher, parser and prober
+// against a loopback listener, so the wiring is covered without the network.
+func TestEndToEndLocalNode(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	file := filepath.Join(t.TempDir(), "sub.txt")
+	content := fmt.Sprintf("trojan://pw@127.0.0.1:%d?sni=local.test#本地节点\n", port)
+	if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	prober := probe.New()
+	prober.Options = probe.Options{Samples: 2, Timeout: 500 * time.Millisecond, DNS: time.Second}
+	controller := app.New(subscription.NewFetcher(), &scan.Scanner{Prober: prober, Workers: 2})
+	*controller.Input = file
+
+	st := &State{}
+	tt := ui.NewTester(func(c *ui.Context) { View(c, controller, st) }, 1180, 700)
+	tt.Frame()
+	controller.Load()
+	waitFor(t, tt, "1 个 TCP 可达")
+
+	body := texts(tt)
+	for _, want := range []string{"本地节点", "127.0.0.1:" + fmt.Sprint(port), "TROJAN", "TLS"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q after real probe:\n%s", want, body)
+		}
+	}
 }
