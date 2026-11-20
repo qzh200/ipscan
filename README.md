@@ -2,14 +2,16 @@
 
 **粘贴一条订阅，得到每个节点的真实质量。** 原生跨平台桌面应用，不做代理、不接管系统网络，只做检测。
 
-![Go](https://img.shields.io/badge/Go-1.27.3-00ADD8?logo=go&logoColor=white)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6?logo=windows&logoColor=white)
-![UI](https://img.shields.io/badge/UI-Onevra%20%2B%20MyGo-C0653B)
-![Formats](https://img.shields.io/badge/%E8%AE%A2%E9%98%85%E6%A0%BC%E5%BC%8F-Clash%20%7C%20Xray%20%7C%20sing--box%20%7C%20URI-6C7A89)
-![Protocols](https://img.shields.io/badge/%E5%8D%8F%E8%AE%AE-10%20%E7%A7%8D-2E8B57)
-![No WebView](https://img.shields.io/badge/runtime-native%2C%20no%20WebView-555555)
-![License](https://img.shields.io/badge/license-GPL--3.0--or--later-2E8B57)
-![Release](https://img.shields.io/github/v/release/qzh200/ipscan?include_prereleases&sort=semver)
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.27.3-00ADD8?logo=go&logoColor=white" alt="Go">
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6?logo=windows&logoColor=white" alt="平台">
+  <img src="https://img.shields.io/badge/UI-Onevra%20%2B%20MyGo-C0653B" alt="UI">
+  <img src="https://img.shields.io/badge/%E8%AE%A2%E9%98%85%E6%A0%BC%E5%BC%8F-Clash%20%7C%20Xray%20%7C%20sing--box%20%7C%20URI-6C7A89" alt="订阅格式">
+  <img src="https://img.shields.io/badge/%E5%8D%8F%E8%AE%AE-10%20%E7%A7%8D-2E8B57" alt="协议">
+  <img src="https://img.shields.io/badge/runtime-native%2C%20no%20WebView-555555" alt="原生运行时">
+  <img src="https://img.shields.io/badge/license-GPL--3.0--or--later-2E8B57" alt="许可证">
+  <img src="https://img.shields.io/github/v/release/qzh200/ipscan?include_prereleases&sort=semver" alt="Release">
+</p>
 
 <img src="docs/screenshot.png" alt="订阅质检主界面：订阅卡片、统计卡片与节点质量表" width="880">
 
