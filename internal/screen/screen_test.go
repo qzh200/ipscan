@@ -32,7 +32,7 @@ func (f fakeFetcher) Fetch(context.Context, string) ([]byte, error) {
 
 type fakeScanner struct{}
 
-func (fakeScanner) Scan(ctx context.Context, nodes []model.Node, progress func(scan.Progress)) []probe.Result {
+func (fakeScanner) Scan(ctx context.Context, nodes []model.Node, progress func(scan.Progress)) ([]probe.Result, error) {
 	results := make([]probe.Result, len(nodes))
 	for i, n := range nodes {
 		r := probe.Result{
@@ -64,7 +64,7 @@ func (fakeScanner) Scan(ctx context.Context, nodes []model.Node, progress func(s
 		results[i] = r
 		progress(scan.Progress{Done: i + 1, Total: len(nodes), Index: i, Result: r})
 	}
-	return results
+	return results, nil
 }
 
 const fixture = `

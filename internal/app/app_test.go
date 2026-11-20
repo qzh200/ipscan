@@ -39,7 +39,7 @@ func (f testFetcher) Fetch(ctx context.Context, link string) ([]byte, error) {
 
 type testScanner struct{}
 
-func (testScanner) Scan(ctx context.Context, nodes []model.Node, progress func(scan.Progress)) []probe.Result {
+func (testScanner) Scan(ctx context.Context, nodes []model.Node, progress func(scan.Progress)) ([]probe.Result, error) {
 	out := make([]probe.Result, len(nodes))
 	for i := range nodes {
 		r := probe.Result{
@@ -52,7 +52,7 @@ func (testScanner) Scan(ctx context.Context, nodes []model.Node, progress func(s
 		out[i] = r
 		progress(scan.Progress{Done: i + 1, Total: len(nodes), Index: i, Result: r})
 	}
-	return out
+	return out, nil
 }
 
 func waitStatus(t *testing.T, a *App, want Status) Snapshot {
@@ -142,10 +142,10 @@ func TestUDPNodeIsNotCountedReachable(t *testing.T) {
 
 type udpScanner struct{}
 
-func (udpScanner) Scan(ctx context.Context, nodes []model.Node, progress func(scan.Progress)) []probe.Result {
+func (udpScanner) Scan(ctx context.Context, nodes []model.Node, progress func(scan.Progress)) ([]probe.Result, error) {
 	r := probe.Result{UDPOnly: true, Grade: "未探测", Samples: 1}
 	progress(scan.Progress{Done: 1, Total: 1, Index: 0, Result: r})
-	return []probe.Result{r}
+	return []probe.Result{r}, nil
 }
 
 func TestGeoFailureIsReportedWithoutFailingScan(t *testing.T) {

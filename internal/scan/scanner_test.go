@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -48,13 +49,16 @@ func TestScanOrdersResultsAndReportsProgress(t *testing.T) {
 	s := &Scanner{Prober: prober, Workers: 2}
 
 	var seen []int
-	results := s.Scan(context.Background(), nodes, func(p Progress) {
+	results, err := s.Scan(context.Background(), nodes, func(p Progress) {
 		if p.Total != len(nodes) || p.Index < 0 || p.Index >= len(nodes) {
 			t.Errorf("bad progress %+v", p)
 		}
 		seen = append(seen, p.Index)
 	})
 
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
 	if len(results) != len(nodes) {
 		t.Fatalf("results = %d", len(results))
 	}
@@ -78,7 +82,10 @@ func TestScanCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	results := s.Scan(ctx, nodes, nil)
+	results, err := s.Scan(ctx, nodes, nil)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
 	if len(results) != 1 || results[0].Reachable {
 		t.Fatalf("canceled scan returned %+v", results)
 	}
