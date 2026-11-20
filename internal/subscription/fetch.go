@@ -118,17 +118,3 @@ func readLimited(path string) ([]byte, error) {
 	}
 	return os.ReadFile(clean)
 }
-
-// SubscriptionURLsOf expands an http(s) URL check hint shared with the UI.
-func SubscriptionURLsOf(raw string) bool {
-	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil {
-		return false
-	}
-	switch strings.ToLower(u.Scheme) {
-	case "http", "https", "file":
-		return true
-	}
-	return false
-}
-

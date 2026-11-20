@@ -38,9 +38,9 @@ func (o Options) normalized() Options {
 // Prober measures nodes. It holds no per-node state and is safe for
 // concurrent use.
 type Prober struct {
-	Options   Options
-	Resolver  *net.Resolver
-	Dialer    *net.Dialer
+	Options  Options
+	Resolver *net.Resolver
+	Dialer   *net.Dialer
 }
 
 // New returns a Prober with sensible defaults.
@@ -124,7 +124,7 @@ func (p *Prober) Probe(ctx context.Context, n model.Node) Result {
 	}
 
 	if n.Security == "tls" || n.Security == "reality" {
-		res.TLS, res.TLSMs = p.probeTLS(pctx, n, o.Timeout)
+		res.TLS, res.TLSMs = p.probeTLS(pctx, n, res.IP, o.Timeout)
 	}
 
 	evaluate(&res, n)
@@ -220,7 +220,7 @@ func stats(rtts []time.Duration) (min, avg, max, jitter time.Duration) {
 	return
 }
 
-func (p *Prober) probeTLS(ctx context.Context, n model.Node, timeout time.Duration) (*TLSInfo, time.Duration) {
+func (p *Prober) probeTLS(ctx context.Context, n model.Node, ip string, timeout time.Duration) (*TLSInfo, time.Duration) {
 	info := &TLSInfo{}
 	serverName := firstNonEmpty(n.ServerName, n.Host)
 	if serverName == "" && net.ParseIP(n.Server) == nil {
@@ -240,7 +240,7 @@ func (p *Prober) probeTLS(ctx context.Context, n model.Node, timeout time.Durati
 
 	d := &tls.Dialer{NetDialer: &net.Dialer{Timeout: timeout}, Config: cfg}
 	start := time.Now()
-	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(n.Server, strconv.Itoa(n.Port)))
+	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(ip, strconv.Itoa(n.Port)))
 	elapsed := time.Since(start)
 	if err != nil {
 		info.Error = trimErr(err)

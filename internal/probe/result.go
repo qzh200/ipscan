@@ -4,7 +4,6 @@ package probe
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"ipscan/internal/model"
@@ -42,7 +41,7 @@ type Result struct {
 	IP     string
 	Family string // IPv4 or IPv6
 
-	DNS      time.Duration
+	DNS       time.Duration
 	Reachable bool
 	Samples   int
 	Succeeded int
@@ -90,30 +89,6 @@ func GradeFromScore(score int, reachable bool) string {
 	default:
 		return "较差"
 	}
-}
-
-// QualityLabel is the score shown in the table with its grade.
-func (r Result) QualityLabel() string {
-	if r.Grade == "" {
-		return "—"
-	}
-	if r.Score == 0 && !r.Reachable {
-		return r.Grade
-	}
-	return fmt.Sprintf("%s %d", r.Grade, r.Score)
-}
-
-// LatencyLabel prints the average round trip.
-func (r Result) LatencyLabel() string {
-	if r.Avg <= 0 {
-		return "—"
-	}
-	return fmt.Sprintf("%d ms", r.Avg.Milliseconds())
-}
-
-// LossLabel prints the packet loss percentage.
-func (r Result) LossLabel() string {
-	return fmt.Sprintf("%.0f%%", r.Loss*100)
 }
 
 // TargetLabel is what the prober connected to.
