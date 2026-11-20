@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/display"
@@ -312,8 +313,8 @@ func latencyCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
 				Width(cellTextWidth(width)).SingleLine()
 		case row.Remote != nil:
 			label := "全球 —"
-			if row.Remote.Reachable > 0 {
-				label = fmt.Sprintf("全球 %dms", row.Remote.Median.Milliseconds())
+			if row.Remote.Reachable > 0 && row.Remote.Median > 0 {
+				label = "全球 " + compactDuration(row.Remote.Median)
 			}
 			display.Text(c, label, display.TextProps{Type: display.TextInfo, FontSize: 10}).
 				Width(cellTextWidth(width)).SingleLine()
@@ -360,6 +361,14 @@ func delayText(row app.Row) string {
 		return "—"
 	}
 	return fmt.Sprintf("%d ms", row.Result.Avg.Milliseconds())
+}
+
+// compactDuration keeps the narrow latency cell readable for slow nodes.
+func compactDuration(d time.Duration) string {
+	if d >= time.Second {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	return fmt.Sprintf("%dms", d.Milliseconds())
 }
 
 func jitterText(row app.Row) string {
