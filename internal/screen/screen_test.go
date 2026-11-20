@@ -17,6 +17,7 @@ import (
 	"ipscan/internal/app"
 	"ipscan/internal/model"
 	"ipscan/internal/probe"
+	"ipscan/internal/remote"
 	"ipscan/internal/scan"
 	"ipscan/internal/subscription"
 )

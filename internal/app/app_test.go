@@ -10,6 +10,7 @@ import (
 
 	"ipscan/internal/model"
 	"ipscan/internal/probe"
+	"ipscan/internal/remote"
 	"ipscan/internal/scan"
 )
 
