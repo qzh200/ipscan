@@ -251,6 +251,28 @@ func TestParseSingBoxJSON(t *testing.T) {
 	}
 }
 
+func TestParseWrappedBase64(t *testing.T) {
+	plain := "trojan://pw@1.2.3.4:443#wrapped\n" +
+		"vless://55555555-5555-5555-5555-555555555555@5.6.7.8:443?security=tls&sni=a.example.com#second"
+	encoded := base64.StdEncoding.EncodeToString([]byte(plain))
+	// Providers wrap the payload at 76 columns; whitespace must not defeat detection.
+	var wrapped strings.Builder
+	for len(encoded) > 76 {
+		wrapped.WriteString(encoded[:76])
+		wrapped.WriteString("\r\n")
+		encoded = encoded[76:]
+	}
+	wrapped.WriteString(encoded)
+
+	doc := mustParse(t, wrapped.String())
+	if len(doc.Nodes) != 2 {
+		t.Fatalf("nodes = %d, warnings = %v", len(doc.Nodes), doc.Warnings)
+	}
+	if doc.Nodes[0].Server != "1.2.3.4" || doc.Nodes[1].Server != "5.6.7.8" {
+		t.Fatalf("nodes = %+v", doc.Nodes)
+	}
+}
+
 func TestParseRejectsGarbage(t *testing.T) {
 	if _, err := Parse([]byte("hello world, not a subscription")); err == nil {
 		t.Fatal("expected an error for unrecognized content")

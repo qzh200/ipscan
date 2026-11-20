@@ -98,7 +98,7 @@ func looksLikeClash(s string) bool {
 }
 
 func looksLikeBase64(s string) bool {
-	if strings.Contains(s, "://") || strings.Contains(s, "proxies:") || strings.ContainsRune(s, '\n') {
+	if strings.Contains(s, "://") || strings.Contains(s, "proxies:") {
 		return false
 	}
 	if len(s) < 16 {
