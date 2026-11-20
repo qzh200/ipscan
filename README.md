@@ -30,12 +30,17 @@ go build -o ipscan.exe ./cmd/ipscan
 
 ## 展示内容
 
-- 节点表：节点（协议标签）、地址、端口（TCP/UDP）、IP、地区/运营商、传输协议（含路径/服务名/流控）、
+- 节点表：国旗 + 节点名（协议标签）、地址、端口（TCP/UDP）、IP、地区/运营商、传输协议（含路径/服务名/流控）、
   TLS（含 SNI）、延迟、抖动、丢包、评分；点击行在右侧查看全部参数。
 - IP 质量：解析出的 IPv4/IPv6、DNS 耗时、位置、运营商、ASN、机房/移动网络、代理标记。
 - 传输质量：TCP 握手 min/avg/max、抖动、丢包、评分（优秀/良好/一般/较差/不可达）。
 - TLS：版本、套件、证书 CN/签发者/到期、主机名校验；QUIC 类节点（hysteria2/tuic）
   正常不监听 TCP，标为“未探测”并保留 IP 质量结果。
+
+节点名里的国家前缀换成正版国旗：`amArmenia 電門`、`gb|UK London`、`🇭🇰Hong Kong`
+都渲染成国旗图片 + 去掉前缀的名字，前缀不参与排序。国旗是内嵌的 249 张 PNG
+（`internal/flags`，来自 flagcdn.com / lipis flag-icons，MIT），不联网、也不依赖系统 emoji
+字体（Windows 的 Segoe UI Emoji 根本不含国旗字形，只会显示 AM/AU 两个字母）。
 
 IP 归属查询先走 ip-api.com 批量接口，被墙或限流时自动回退到 HTTPS 的 ipwho.is；
 两者都失败时状态栏显示“归属查询失败”，延迟/TLS 结果不受影响。只发送解析出的公网 IP。
@@ -62,6 +67,11 @@ IP 归属查询先走 ip-api.com 批量接口，被墙或限流时自动回退�
 结果同时写入表格“延迟”列的第二行（`全球 xxms`），悬停可看汇总。
 
 - 每个节点按需触发，同一时间只跑一个测量；重新加载订阅会取消并清空。
+- 就近边缘识别：CDN / Anycast 目标会被各探测点就近接入，8 个城市同时给出 1–5 ms、
+  0% 丢包。程序用探测点经纬度做物理下限校验（光纤往返 ≥ 距离/100 ms）：任意两个探测点
+  的 RTT 之和低于该下限，说明两者不可能到达同一台远端主机。命中的探测点标“就近边缘”，
+  其延迟不计入中位延迟，详情页给出说明；这种情况下表格“延迟”列显示 `全球 边缘`，
+  而不是一个虚假的 5 ms。
 - 未认证额度约 500 次测量/小时；目标地址会发送给 `api.globalping.io`。
 - ping.pe 的前端使用私有 WebSocket 协议、没有公开 API，因此未直接接入；`remote.Pinger`
   是接口，后续可替换或增加其他探测服务。
@@ -75,7 +85,8 @@ GOPROXY=off go test ./...
 
 ```
 cmd/ipscan            窗口与依赖装配
-internal/model        节点模型（协议/传输/安全参数）
+internal/model        节点模型（协议/传输/安全参数）与国家前缀识别
+internal/flags        内嵌的国旗图片（ISO 代码 → PNG）
 internal/subscription 下载与格式识别、URI/Clash/Xray/sing-box 解析
 internal/probe        DNS、TCP、TLS 探测，评分与 IP 归属
 internal/remote       第三方多地点探测（Globalping）

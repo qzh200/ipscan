@@ -453,3 +453,64 @@ func TestIPTypeFilter(t *testing.T) {
 		t.Fatalf("hosting filter wrong:\n%s", body)
 	}
 }
+
+type anycastPinger struct{}
+
+func (anycastPinger) Ping(_ context.Context, target string, _ int) (remote.Report, error) {
+	probes := []remote.Probe{
+		{Country: "JP", City: "Tokyo", Network: "xTom", ASN: "AS3258", Latency: time.Millisecond, OK: true, Shared: true,
+			Latitude: 35.69, Longitude: 139.69},
+		{Country: "US", City: "Los Angeles", Network: "HostPapa", ASN: "AS36352", Latency: 2 * time.Millisecond, OK: true, Shared: true,
+			Latitude: 34.05, Longitude: -118.24},
+		{Country: "DE", City: "Nuremberg", Network: "Hetzner Online", ASN: "AS24940", Latency: 14 * time.Millisecond, OK: true, Shared: true,
+			Latitude: 49.45, Longitude: 11.08},
+	}
+	return remote.Report{
+		Target: target, Provider: "Globalping", MeasurementID: "m2", At: time.Now(),
+		Probes: probes, Reachable: 3, Shared: 3, Loss: 0,
+	}, nil
+}
+
+func TestCountryFlagsAndAnycastNote(t *testing.T) {
+	const fixture = `
+proxies:
+  - {name: amArmenia 電門 藕豆子, type: vmess, server: am.example.com, port: 443, uuid: 33333333-3333-3333-3333-333333333333, cipher: auto, tls: true}
+  - {name: auAustralia Sydney 🦘, type: vmess, server: au.example.com, port: 443, uuid: 44444444-4444-4444-4444-444444444444, cipher: auto, tls: true}
+  - {name: hkHong Kong ミク, type: vmess, server: hk2.example.com, port: 443, uuid: 55555555-5555-5555-5555-555555555555, cipher: auto, tls: true}
+`
+	a := app.New(fakeFetcher{body: []byte(fixture)}, fakeScanner{})
+	a.Remote = anycastPinger{}
+	*a.Input = "https://example.com/flags"
+	st := NewState()
+	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1180, 700)
+	tt.Frame()
+	a.Load()
+	waitFor(t, tt, "3 个 TCP 可达")
+	tt.Advance(400 * time.Millisecond)
+
+	body := texts(tt)
+	for _, want := range []string{"Armenia 電門 藕豆子", "Australia Sydney 🦘", "Hong Kong ミク"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in list:\n%s", want, body)
+		}
+	}
+	_ = snapshot(t, tt, "ipscan-flags.png")
+
+	if err := tt.Click("Armenia 電門 藕豆子"); err != nil {
+		t.Fatalf("open detail: %v", err)
+	}
+	tt.Advance(400 * time.Millisecond)
+	if err := tt.Click("全球 Ping（8 个探测点）"); err != nil {
+		t.Fatalf("click global ping: %v", err)
+	}
+	waitFor(t, tt, "全部命中就近边缘")
+	tt.Advance(400 * time.Millisecond)
+
+	detail := texts(tt)
+	for _, want := range []string{"就近边缘", "物理可达下限", "边缘节点往返时延"} {
+		if !strings.Contains(detail, want) {
+			t.Fatalf("missing %q in global card:\n%s", want, detail)
+		}
+	}
+	_ = snapshot(t, tt, "ipscan-anycast.png")
+}

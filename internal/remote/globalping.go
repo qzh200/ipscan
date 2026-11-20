@@ -67,11 +67,13 @@ type gpMeasurement struct {
 
 type gpResult struct {
 	Probe struct {
-		Continent string `json:"continent"`
-		Country   string `json:"country"`
-		City      string `json:"city"`
-		Network   string `json:"network"`
-		ASN       int    `json:"asn"`
+		Continent string  `json:"continent"`
+		Country   string  `json:"country"`
+		City      string  `json:"city"`
+		Network   string  `json:"network"`
+		ASN       int     `json:"asn"`
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
 	} `json:"probe"`
 	Result struct {
 		Status string `json:"status"`
@@ -235,9 +237,11 @@ func (g *Globalping) report(target, id string, m gpMeasurement) Report {
 	probes := make([]Probe, 0, len(m.Results))
 	for _, r := range m.Results {
 		p := Probe{
-			Country: r.Probe.Country,
-			City:    r.Probe.City,
-			Network: r.Probe.Network,
+			Country:   r.Probe.Country,
+			City:      r.Probe.City,
+			Network:   r.Probe.Network,
+			Latitude:  r.Probe.Latitude,
+			Longitude: r.Probe.Longitude,
 		}
 		if r.Probe.ASN > 0 {
 			p.ASN = fmt.Sprintf("AS%d", r.Probe.ASN)

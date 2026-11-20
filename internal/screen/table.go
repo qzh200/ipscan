@@ -283,7 +283,7 @@ func ipSelect(c *ui.Context, st *State) {
 
 func tableRow(c *ui.Context, a *app.App, item filteredRow, t *ui.Theme, selected int) {
 	row := item.row
-	el := components.TableRow(c, item.index, row.Node.Name, item.index == selected, func(col int) {
+	el := components.TableRow(c, item.index, model.SortName(row.Node.Name), item.index == selected, func(col int) {
 		cells(c, row, col, t)
 	})
 	el.MinHeight(44).OnClick(func() { a.Select(item.index) })
@@ -298,7 +298,7 @@ func cells(c *ui.Context, row app.Row, col int, t *ui.Theme) {
 		ui.Row(c).Gap(6).AlignItems(ui.Center).MinWidth(0).Children(func() {
 			ui.Box(c).Size(7, 7).Radius(4).Background(toneOf(row, t)).Shrink(0)
 			components.Badge(c, row.Node.ProtocolLabel(), components.BadgeOptions{Tone: components.BadgeNeutral})
-			components.Text(c, row.Node.Name).FontSize(12.5).SingleLine().MinWidth(0).Grow(1)
+			nodeName(c, row.Node.Name, 12.5, false)
 		})
 	case 1:
 		stack(c, func() {
@@ -365,8 +365,11 @@ func cells(c *ui.Context, row app.Row, col int, t *ui.Theme) {
 				components.Text(c, "全球失败").FontSize(10).TextColor(t.Danger).SingleLine()
 			} else if row.Remote != nil {
 				label := "全球 —"
-				if row.Remote.Reachable > 0 && row.Remote.Median > 0 {
+				switch {
+				case row.Remote.Reachable > 0 && row.Remote.Median > 0:
 					label = "全球 " + compactDuration(row.Remote.Median)
+				case row.Remote.Shared > 0:
+					label = "全球 边缘"
 				}
 				components.Text(c, label).FontSize(10).TextColor(t.Accent).SingleLine()
 			}
@@ -560,7 +563,7 @@ func hasSortValue(r *app.Row, column string) bool {
 func compareRows(a, b *app.Row, column string) int {
 	switch column {
 	case "name":
-		return nameCollator.CompareString(a.Node.Name, b.Node.Name)
+		return nameCollator.CompareString(model.SortName(a.Node.Name), model.SortName(b.Node.Name))
 	case "server":
 		return strings.Compare(strings.ToLower(a.Node.Server), strings.ToLower(b.Node.Server))
 	case "port":

@@ -40,7 +40,7 @@ func detailPage(c *ui.Context, a *app.App, snap app.Snapshot, t *ui.Theme) {
 			})
 
 			ui.Column(c).FillWidth().Gap(7).Children(func() {
-				components.Text(c, row.Node.Name).FontSize(23).Bold().Wrap()
+				nodeName(c, row.Node.Name, 23, true).Bold()
 				ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
 					components.Badge(c, row.Node.ProtocolLabel(), components.BadgeOptions{Tone: components.BadgeAccent})
 					components.Badge(c, row.Node.TransportLabel(), components.BadgeOptions{Tone: components.BadgeNeutral})
@@ -227,9 +227,13 @@ func globalCard(c *ui.Context, a *app.App, row app.Row, index int, t *ui.Theme) 
 			}
 			ui.Column(c).Gap(0).Children(func() {
 				for _, p := range rep.Probes[:limit] {
-					probeRow(c, t, p.LocationLabel(), p.LatencyLabel(), p.LossLabel(), p.Loss > 0)
+					probeRow(c, t, p.LocationLabel(), p.LatencyLabel(), p.LossLabel(), p.Loss > 0, p.Shared)
 				}
 			})
+			if rep.Shared > 0 {
+				components.Text(c, "RTT 低于两地间的物理可达下限，说明目标在各探测点就近接入了 CDN / Anycast：这些数字是边缘节点往返时延，不是该节点本身的跨地域延迟。").
+					FontSize(11).TextColor(t.Warning).Wrap()
+			}
 			if len(rep.Probes) > limit {
 				components.Text(c, fmt.Sprintf("另有 %d 个探测点…", len(rep.Probes)-limit)).
 					FontSize(11).TextColor(t.TextMuted)
@@ -239,9 +243,12 @@ func globalCard(c *ui.Context, a *app.App, row app.Row, index int, t *ui.Theme) 
 	})
 }
 
-func probeRow(c *ui.Context, t *ui.Theme, location, latency, loss string, warn bool) {
+func probeRow(c *ui.Context, t *ui.Theme, location, latency, loss string, warn, shared bool) {
 	ui.Row(c).Height(24).Gap(10).AlignItems(ui.Center).Children(func() {
 		components.Text(c, location).FontSize(11.5).TextColor(t.TextMuted).Grow(1).MinWidth(0).SingleLine()
+		if shared {
+			components.Badge(c, "就近边缘", components.BadgeOptions{Tone: components.BadgeWarning})
+		}
 		components.Text(c, latency).FontSize(11.5).Width(72).Shrink(0)
 		tone := components.BadgeNeutral
 		if warn {

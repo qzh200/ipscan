@@ -106,3 +106,49 @@ func TestGlobalpingValidationError(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// TestGlobalpingMarksAnycast covers the whole path from API JSON to the edge
+// flag: two far-apart probes reporting single-digit milliseconds.
+func TestGlobalpingMarksAnycast(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "m2", "probesCount": 2})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": "m2", "type": "ping", "status": "finished",
+			"results": []any{
+				map[string]any{
+					"probe": map[string]any{"country": "JP", "city": "Tokyo", "latitude": 35.69, "longitude": 139.69},
+					"result": map[string]any{
+						"status": "finished",
+						"stats":  map[string]any{"min": 1.0, "max": 1.4, "avg": 1.2, "total": 4, "rcv": 4, "loss": 0},
+					},
+				},
+				map[string]any{
+					"probe": map[string]any{"country": "US", "city": "Los Angeles", "latitude": 34.05, "longitude": -118.24},
+					"result": map[string]any{
+						"status": "finished",
+						"stats":  map[string]any{"min": 2.0, "max": 2.4, "avg": 2.1, "total": 4, "rcv": 4, "loss": 0},
+					},
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	g := &Globalping{BaseURL: srv.URL, Client: srv.Client(), PollInterval: time.Millisecond, Timeout: 2 * time.Second}
+	rep, err := g.Ping(context.Background(), "cdn.example.com", 2)
+	if err != nil {
+		t.Fatalf("Ping: %v", err)
+	}
+	if rep.Shared != 2 || rep.Median != 0 {
+		t.Fatalf("shared=%d median=%v, want 2 and 0", rep.Shared, rep.Median)
+	}
+	for _, p := range rep.Probes {
+		if !p.Shared {
+			t.Fatalf("probe %s not marked shared", p.City)
+		}
+	}
+}
