@@ -147,3 +147,25 @@ func (udpScanner) Scan(ctx context.Context, nodes []model.Node, progress func(sc
 	progress(scan.Progress{Done: 1, Total: 1, Index: 0, Result: r})
 	return []probe.Result{r}
 }
+
+func TestGeoFailureIsReportedWithoutFailingScan(t *testing.T) {
+	a := New(testFetcher{byLink: map[string]string{"geo": ""}}, geoFailScanner{})
+	*a.Input = "geo"
+	a.Load()
+	snap := waitStatus(t, a, StatusDone)
+
+	if snap.GeoNote == "" {
+		t.Fatal("expected the geo lookup failure to surface")
+	}
+	if len(snap.Rows) != 1 || !snap.Rows[0].Probed {
+		t.Fatalf("rows should still be measured: %+v", snap.Rows)
+	}
+}
+
+type geoFailScanner struct{}
+
+func (geoFailScanner) Scan(ctx context.Context, nodes []model.Node, progress func(scan.Progress)) ([]probe.Result, error) {
+	r := probe.Result{Reachable: true, Score: 88, Grade: "优秀", Avg: time.Millisecond}
+	progress(scan.Progress{Done: 1, Total: 1, Index: 0, Result: r})
+	return []probe.Result{r}, errors.New("IP 归属查询失败: blocked")
+}

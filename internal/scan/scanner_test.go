@@ -83,3 +83,38 @@ func TestScanCancel(t *testing.T) {
 		t.Fatalf("canceled scan returned %+v", results)
 	}
 }
+
+type failingGeo struct{}
+
+func (failingGeo) Lookup(context.Context, []string) (map[string]probe.Geo, error) {
+	return nil, errors.New("provider blocked")
+}
+
+func TestScanSurfacesGeoErrorButKeepsResults(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+	nodes := []model.Node{{Name: "a", Type: "trojan", Server: "127.0.0.1", Port: ln.Addr().(*net.TCPAddr).Port}}
+	prober := probe.New()
+	prober.Options = probe.Options{Samples: 1, Timeout: time.Second, DNS: time.Second}
+	s := &Scanner{Prober: prober, Geo: failingGeo{}, Workers: 1}
+
+	results, geoErr := s.Scan(context.Background(), nodes, nil)
+	if geoErr == nil {
+		t.Fatal("expected the geo error to surface")
+	}
+	if len(results) != 1 || !results[0].Reachable {
+		t.Fatalf("results = %+v", results)
+	}
+}

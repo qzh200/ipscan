@@ -21,9 +21,10 @@ type Fetcher interface {
 	Fetch(ctx context.Context, link string) ([]byte, error)
 }
 
-// Scanner probes parsed nodes and reports each finished one.
+// Scanner probes parsed nodes and reports each finished one. The error, when
+// non-nil, only describes the optional IP registry lookup.
 type Scanner interface {
-	Scan(ctx context.Context, nodes []model.Node, progress func(scan.Progress)) []probe.Result
+	Scan(ctx context.Context, nodes []model.Node, progress func(scan.Progress)) ([]probe.Result, error)
 }
 
 // Status is the phase the app is in.
@@ -66,6 +67,8 @@ type Snapshot struct {
 	Selected int
 	Elapsed  time.Duration
 	Stats    Stats
+	// GeoNote explains why IP registry data is missing, empty when it worked.
+	GeoNote string
 }
 
 // App holds the state. Methods are safe for concurrent use.
@@ -89,6 +92,7 @@ type App struct {
 	selected int
 	started  time.Time
 	elapsed  time.Duration
+	geoNote  string
 }
 
 // New creates an idle app.
@@ -126,6 +130,7 @@ func (a *App) Load() {
 	a.warnings = nil
 	a.status = StatusLoading
 	a.message = "正在获取订阅…"
+	a.geoNote = ""
 	a.done, a.total = 0, 0
 	a.selected = -1
 	a.elapsed = 0
@@ -153,6 +158,7 @@ func (a *App) Reprobe() {
 	}
 	a.status = StatusProbing
 	a.message = "正在重新检测…"
+	a.geoNote = ""
 	a.done, a.total = 0, len(nodes)
 	a.elapsed = 0
 	a.started = time.Now()
@@ -241,6 +247,7 @@ func (a *App) Snapshot() Snapshot {
 		Selected: a.selected,
 		Elapsed:  elapsed,
 		Stats:    stats,
+		GeoNote:  a.geoNote,
 	}
 }
 
@@ -299,7 +306,7 @@ func (a *App) probe(ctx context.Context, gen int, nodes []model.Node) {
 		a.update(gen, func() { a.failLocked("未配置探测器") })
 		return
 	}
-	results := a.Scanner.Scan(ctx, nodes, func(p scan.Progress) {
+	results, geoErr := a.Scanner.Scan(ctx, nodes, func(p scan.Progress) {
 		a.update(gen, func() {
 			if p.Index >= 0 && p.Index < len(a.rows) {
 				a.rows[p.Index].Result = p.Result
@@ -312,7 +319,12 @@ func (a *App) probe(ctx context.Context, gen int, nodes []model.Node) {
 	if ctx.Err() != nil {
 		return
 	}
+	note := ""
+	if geoErr != nil {
+		note = geoErr.Error()
+	}
 	a.update(gen, func() {
+		a.geoNote = note
 		for i := range results {
 			if i >= len(a.rows) {
 				break

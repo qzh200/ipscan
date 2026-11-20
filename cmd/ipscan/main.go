@@ -16,7 +16,7 @@ import (
 
 func newScanner() *scan.Scanner {
 	s := scan.New()
-	s.Geo = probe.NewIPAPI()
+	s.Geo = probe.NewGeoChain()
 	s.Workers = 8
 	return s
 }

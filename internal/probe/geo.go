@@ -28,7 +28,7 @@ type IPAPI struct {
 func NewIPAPI() *IPAPI {
 	return &IPAPI{
 		Client:   &http.Client{Timeout: 6 * time.Second},
-		Endpoint: "http://ip-api.com/batch?fields=status,message,country,regionName,city,isp,org,as,proxy,hosting,mobile&lang=zh-CN",
+		Endpoint: "http://ip-api.com/batch?fields=status,message,query,country,regionName,city,isp,org,as,proxy,hosting,mobile&lang=zh-CN",
 	}
 }
 
@@ -94,11 +94,21 @@ func (g *IPAPI) Lookup(ctx context.Context, ips []string) (map[string]Geo, error
 		if err := json.Unmarshal(body, &entries); err != nil {
 			return out, fmt.Errorf("IP 归属响应解析失败: %w", err)
 		}
-		for _, e := range entries {
+		for i, e := range entries {
 			if e.Status != "success" {
 				continue
 			}
-			out[e.Query] = Geo{
+			// The batch endpoint answers in request order and only echoes
+			// "query" when the fields parameter asks for it; fall back to the
+			// order so a renamed field cannot silently empty the map.
+			key := e.Query
+			if key == "" && i < len(batch) {
+				key = batch[i]
+			}
+			if key == "" {
+				continue
+			}
+			out[key] = Geo{
 				Country: e.Country,
 				Region:  e.RegionName,
 				City:    e.City,

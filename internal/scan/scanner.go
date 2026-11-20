@@ -31,11 +31,13 @@ func New() *Scanner {
 }
 
 // Scan probes every node and returns results in input order. progress may be
-// called from several goroutines; it is serialized here.
-func (s *Scanner) Scan(ctx context.Context, nodes []model.Node, progress func(Progress)) []probe.Result {
+// called from several goroutines; it is serialized here. The error reports why
+// the optional IP registry lookup failed, while the measured results stay
+// usable either way.
+func (s *Scanner) Scan(ctx context.Context, nodes []model.Node, progress func(Progress)) ([]probe.Result, error) {
 	results := make([]probe.Result, len(nodes))
 	if len(nodes) == 0 {
-		return results
+		return results, nil
 	}
 
 	workers := s.Workers
@@ -92,25 +94,24 @@ func (s *Scanner) Scan(ctx context.Context, nodes []model.Node, progress func(Pr
 	}
 	wg.Wait()
 
+	var geoErr error
 	if s.Geo != nil && ctx.Err() == nil {
-		s.enrich(ctx, results, nodes)
+		geoErr = s.enrich(ctx, results)
 	}
-	return results
+	return results, geoErr
 }
 
-func (s *Scanner) enrich(ctx context.Context, results []probe.Result, nodes []model.Node) {
+func (s *Scanner) enrich(ctx context.Context, results []probe.Result) error {
 	var ips []string
 	for i := range results {
-		for _, ip := range results[i].IPs {
-			ips = append(ips, ip)
-		}
+		ips = append(ips, results[i].IPs...)
 	}
 	if len(ips) == 0 {
-		return
+		return nil
 	}
 	lookup, err := s.Geo.Lookup(ctx, ips)
-	if err != nil || len(lookup) == 0 {
-		return
+	if err != nil {
+		return err
 	}
 	for i := range results {
 		for _, ip := range results[i].IPs {
@@ -121,4 +122,5 @@ func (s *Scanner) enrich(ctx context.Context, results []probe.Result, nodes []mo
 			}
 		}
 	}
+	return nil
 }
