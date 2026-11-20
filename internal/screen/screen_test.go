@@ -150,7 +150,7 @@ func TestViewShowsNodesAndDetail(t *testing.T) {
 	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1280, 840)
 	tt.Frame()
 
-	if !strings.Contains(texts(tt), "粘贴订阅链接，开始节点体检") {
+	if !strings.Contains(texts(tt), "粘贴订阅链接，开始订阅鉴定") {
 		t.Fatalf("empty state missing:\n%s", texts(tt))
 	}
 
