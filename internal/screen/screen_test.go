@@ -156,7 +156,7 @@ func TestViewShowsNodesAndDetail(t *testing.T) {
 	waitFor(t, tt, "3 个 TCP 可达")
 
 	body := texts(tt)
-	for _, want := range []string{"香港 WS", "美国 Reality", "日本 SS", "德国 HY2", "优秀", "TLS · WS", "中国 香港", "Cloudflare"} {
+	for _, want := range []string{"香港 WS", "美国 Reality", "日本 SS", "德国 HY2", "优秀", "传输协议", "REALITY", "中国 香港", "Cloudflare"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in view:\n%s", want, body)
 		}
@@ -312,7 +312,7 @@ func TestEndToEndLocalNode(t *testing.T) {
 	waitFor(t, tt, "1 个 TCP 可达")
 
 	body := texts(tt)
-	for _, want := range []string{"本地节点", "127.0.0.1:" + fmt.Sprint(port), "TROJAN", "TLS"} {
+	for _, want := range []string{"本地节点", "127.0.0.1", fmt.Sprint(port), "TROJAN", "TLS"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q after real probe:\n%s", want, body)
 		}

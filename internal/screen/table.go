@@ -12,6 +12,7 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 
 	"ipscan/internal/app"
+	"ipscan/internal/model"
 	"ipscan/internal/probe"
 )
 
@@ -98,19 +99,19 @@ func filterRows(rows []app.Row, mode filterMode, query string) []filteredRow {
 // Column widths are fixed so the header and every row line up. The name column
 // absorbs the remaining width of the window.
 type tableCols struct {
-	dot, name, server, ip, geo, transport, delay, jitter, loss, score, arrow float32
+	dot, name, server, port, ip, geo, network, security, delay, jitter, loss, score, arrow float32
 }
 
 func newTableCols(c *ui.Context) tableCols {
 	w, _ := c.Size()
-	fixed := float32(24 + 190 + 120 + 190 + 140 + 66 + 68 + 50 + 88 + 16)
+	fixed := float32(18 + 160 + 52 + 112 + 176 + 84 + 86 + 60 + 62 + 44 + 78 + 12)
 	name := w - 70 - fixed // page padding, card border and inner padding
 	if name < 170 {
 		name = 170
 	}
 	return tableCols{
-		dot: 24, name: name, server: 190, ip: 120, geo: 190, transport: 140,
-		delay: 66, jitter: 68, loss: 50, score: 88, arrow: 16,
+		dot: 18, name: name, server: 160, port: 52, ip: 112, geo: 176,
+		network: 84, security: 86, delay: 60, jitter: 62, loss: 44, score: 78, arrow: 12,
 	}
 }
 
@@ -147,10 +148,12 @@ func tableHeader(c *ui.Context, cols tableCols, tk *theme.Tokens) {
 	ui.Row(c).Height(36).PaddingX(14).AlignItems(ui.Center).Children(func() {
 		headerCell(c, "", cols.dot, tk)
 		headerCell(c, "节点", cols.name, tk)
-		headerCell(c, "服务器", cols.server, tk)
+		headerCell(c, "地址", cols.server, tk)
+		headerCell(c, "端口", cols.port, tk)
 		headerCell(c, "IP", cols.ip, tk)
 		headerCell(c, "地区 / 运营商", cols.geo, tk)
-		headerCell(c, "传输", cols.transport, tk)
+		headerCell(c, "传输协议", cols.network, tk)
+		headerCell(c, "TLS", cols.security, tk)
 		headerCell(c, "延迟", cols.delay, tk)
 		headerCell(c, "抖动", cols.jitter, tk)
 		headerCell(c, "丢包", cols.loss, tk)
@@ -175,9 +178,11 @@ func tableRow(c *ui.Context, a *app.App, item filteredRow, cols tableCols, tk *t
 		statusCell(c, row, cols.dot, tk)
 		nameCell(c, row, cols.name, tk)
 		serverCell(c, row, cols.server, tk)
+		portCell(c, row, cols.port, tk)
 		ipCell(c, row, cols.ip, tk)
 		geoCell(c, row, cols.geo, tk)
-		transportCell(c, row, cols.transport, tk)
+		networkCell(c, row, cols.network, tk)
+		securityCell(c, row, cols.security, tk)
 		textCell(c, delayText(row), cols.delay, toneOf(row, tk), tk)
 		textCell(c, jitterText(row), cols.jitter, tk.TextSecondary, tk)
 		textCell(c, lossText(row), cols.loss, lossTone(row, tk), tk)
@@ -205,11 +210,18 @@ func nameCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
 
 func serverCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
 	ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1).Children(func() {
-		display.Text(c, row.Node.Address(), display.TextProps{Code: true, FontSize: 12}).Width(cellTextWidth(width)).SingleLine()
-		detail := firstNonEmpty(row.Node.ServerName, row.Node.Host, row.Node.Cipher)
+		display.Text(c, row.Node.Server, display.TextProps{Code: true, FontSize: 12}).Width(cellTextWidth(width)).SingleLine()
+		detail := firstNonEmpty(row.Node.Host, row.Node.Cipher)
 		if detail != "" {
 			display.Text(c, detail, display.TextProps{Type: display.TextSecondary, FontSize: 11}).Width(cellTextWidth(width)).SingleLine()
 		}
+	})
+}
+
+func portCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
+	ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1).Children(func() {
+		display.Text(c, strconv.Itoa(row.Node.Port), display.TextProps{Code: true, FontSize: 12}).Width(cellTextWidth(width)).SingleLine()
+		display.Text(c, carrierOf(row.Node), display.TextProps{Type: display.TextSecondary, FontSize: 11}).Width(cellTextWidth(width)).SingleLine()
 	})
 }
 
@@ -244,7 +256,11 @@ func geoCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
 	})
 }
 
-func transportCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
+func networkCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
+	network := strings.ToUpper(row.Node.Network)
+	if network == "" {
+		network = "TCP"
+	}
 	sub := row.Node.Path
 	if sub == "" {
 		sub = row.Node.ServiceName
@@ -252,13 +268,29 @@ func transportCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) 
 	if sub == "" {
 		sub = row.Node.Flow
 	}
-	if sub == "" {
-		sub = firstNonEmpty(row.Node.ServerName, row.Node.Host, row.Node.Cipher)
-	}
 	ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1).Children(func() {
-		display.Text(c, row.Node.TransportLabel(), display.TextProps{FontSize: 12}).Width(cellTextWidth(width)).SingleLine()
+		display.Text(c, network, display.TextProps{FontSize: 12}).Width(cellTextWidth(width)).SingleLine()
 		if sub != "" {
 			display.Text(c, sub, display.TextProps{Type: display.TextSecondary, FontSize: 11, Code: true}).Width(cellTextWidth(width)).SingleLine()
+		}
+	})
+}
+
+func securityCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
+	label := securityLabel(row.Node.Security)
+	color := tk.Text
+	switch label {
+	case "REALITY":
+		color = tk.Primary
+	case "TLS":
+		color = tk.Text
+	case "无":
+		color = tk.TextSecondary
+	}
+	ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1).Children(func() {
+		ui.Text(c, label).FontSize(12).TextColor(color).Width(cellTextWidth(width)).SingleLine()
+		if sni := firstNonEmpty(row.Node.ServerName, row.Node.Host); sni != "" {
+			display.Text(c, sni, display.TextProps{Type: display.TextSecondary, FontSize: 11, Code: true}).Width(cellTextWidth(width)).SingleLine()
 		}
 	})
 }
@@ -374,4 +406,21 @@ func emptyState(c *ui.Context, snap app.Snapshot, tk *theme.Tokens) {
 		Title:       "没有匹配的节点",
 		Description: "换一个筛选条件，或清空搜索框。",
 	})
+}
+
+// carrierOf distinguishes TCP from the QUIC-based protocols.
+func carrierOf(n model.Node) string {
+	if probe.UDPTransport(n) {
+		return "UDP"
+	}
+	return "TCP"
+}
+
+func securityLabel(security string) string {
+	switch strings.ToLower(strings.TrimSpace(security)) {
+	case "", "none":
+		return "无"
+	default:
+		return strings.ToUpper(security)
+	}
 }
