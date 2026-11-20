@@ -2,6 +2,7 @@
 package main
 
 import (
+	_ "embed"
 	"log"
 
 	"github.com/egoist/mygo"
@@ -14,6 +15,11 @@ import (
 	"ipscan/internal/screen"
 	"ipscan/internal/subscription"
 )
+
+// iconPNG is the window and taskbar icon: a white pulse on the app's terracotta.
+//
+//go:embed icon.png
+var iconPNG []byte
 
 func newScanner() *scan.Scanner {
 	s := scan.New()
@@ -28,8 +34,8 @@ func main() {
 	view := screen.NewState()
 
 	mygo.App.WhenReady(func() {
-		mygo.NewWindow(mygo.WindowOptions{
-			Title:           "节点体检",
+		win := mygo.NewWindow(mygo.WindowOptions{
+			Title:           "节点体检 · ipscan",
 			Width:           1280,
 			Height:          840,
 			MinWidth:        1180,
@@ -37,6 +43,9 @@ func main() {
 			BackgroundColor: "light-dark(#fcfbf9, #211f1c)",
 			Content:         ui.View(func(c *ui.Context) { screen.View(c, controller, view) }),
 		})
+		if err := win.SetIcon(iconPNG); err != nil {
+			log.Printf("设置窗口图标失败: %v", err)
+		}
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)

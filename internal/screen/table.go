@@ -126,11 +126,21 @@ func baseRows(rows []app.Row, ipType int, query string) []app.Row {
 	return out
 }
 
+// tableWidth is the width the table card can show: the window minus the page
+// padding, the card border and the gutter the ScrollView's scroll bar paints
+// over. Columns are laid out to exactly this, so the table never needs
+// horizontal scrolling and the bar never covers the score column.
+func tableWidth(windowWidth float32) float32 {
+	const chrome = 54 // page padding 22×2 + card border 2, plus rounding
+	const scrollbar = 12
+	return max(float32(960), windowWidth-chrome-scrollbar)
+}
+
 // tableColumnsFor proportions the columns to the window so the table always
 // fills the card: no column hogs the extra room on a wide screen, and the
 // score column stays visible on a narrow one.
 func tableColumnsFor(windowWidth float32) []ui.TableColumn {
-	content := max(float32(960), windowWidth-54)
+	content := tableWidth(windowWidth)
 	specs := []struct {
 		id, title string
 		ratio     float32
@@ -181,11 +191,56 @@ func tableColumnsFor(windowWidth float32) []ui.TableColumn {
 	cols := make([]ui.TableColumn, len(specs))
 	for i, spec := range specs {
 		cols[i] = ui.TableColumn{
-			ID: spec.id, Title: spec.title, Width: widths[i], Align: spec.align,
-			Sortable: true,
+			ID: spec.id, Title: spec.title, Width: widths[i],
+			MinWidth: spec.min, Align: spec.align, Sortable: true,
 		}
 	}
 	return cols
+}
+
+// fitTableWidths keeps the table inside its card. Onevra remembers the widths
+// the user dragged, and a widened column used to push the last columns past the
+// right edge, clipping the score badge. Normalising the remembered widths to
+// the card's width keeps a drag's proportions while the table always fits.
+func fitTableWidths(state *components.TableState, cols []ui.TableColumn, content float32) {
+	if len(state.Columns.Widths) == 0 || content <= 0 {
+		return
+	}
+	widths := make(map[string]float32, len(cols))
+	total := float32(0)
+	for _, col := range cols {
+		w, ok := state.Columns.Widths[col.ID]
+		if !ok {
+			w = col.Width
+		}
+		w = max(w, col.MinWidth, 16)
+		widths[col.ID] = w
+		total += w
+	}
+	if total <= 0 {
+		return
+	}
+	scale := content / total
+	sum := float32(0)
+	for _, col := range cols {
+		widths[col.ID] = max(widths[col.ID]*scale, col.MinWidth, 16)
+		sum += widths[col.ID]
+	}
+	// The clamp may have left a few pixels over or under the card; spread the
+	// difference over the columns that still have room.
+	if diff := content - sum; diff != 0 {
+		slack := float32(0)
+		for _, col := range cols {
+			slack += widths[col.ID] - col.MinWidth
+		}
+		if slack > 0 {
+			for _, col := range cols {
+				room := widths[col.ID] - col.MinWidth
+				widths[col.ID] += diff * room / slack
+			}
+		}
+	}
+	state.Columns.Widths = widths
 }
 
 func toolbarAndTable(c *ui.Context, a *app.App, st *State, snap app.Snapshot, t *ui.Theme) {
@@ -212,10 +267,13 @@ func toolbarAndTable(c *ui.Context, a *app.App, st *State, snap app.Snapshot, t 
 				}
 				sortFiltered(rows, st.Sort)
 				windowWidth, _ := c.Size()
-				components.ScrollView(c, components.ScrollViewOptions{Axes: components.ScrollBoth}).
+				width := tableWidth(windowWidth)
+				cols := tableColumnsFor(windowWidth)
+				fitTableWidths(&st.Table, cols, width)
+				components.ScrollView(c, components.ScrollViewOptions{Axes: components.ScrollVertical}).
 					Grow(1).Basis(0).Children(func() {
-					ui.Column(c).Width(max(960, windowWidth-54)).Children(func() {
-						components.Table(c, &st.Table, tableColumnsFor(windowWidth), func() {
+					ui.Column(c).Width(width).Children(func() {
+						components.Table(c, &st.Table, cols, func() {
 							for _, item := range rows {
 								tableRow(c, a, item, t, snap.Selected)
 							}
