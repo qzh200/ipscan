@@ -12,6 +12,7 @@ import (
 
 	"ipscan/internal/model"
 	"ipscan/internal/probe"
+	"ipscan/internal/remote"
 	"ipscan/internal/scan"
 	"ipscan/internal/subscription"
 )
@@ -19,6 +20,11 @@ import (
 // Fetcher downloads a subscription payload.
 type Fetcher interface {
 	Fetch(ctx context.Context, link string) ([]byte, error)
+}
+
+// Pinger runs a network check from third-party locations.
+type Pinger interface {
+	Ping(ctx context.Context, target string, limit int) (remote.Report, error)
 }
 
 // Scanner probes parsed nodes and reports each finished one. The error, when
@@ -43,6 +49,10 @@ type Row struct {
 	Node   model.Node
 	Result probe.Result
 	Probed bool
+	// Remote is the latest worldwide ping, nil until requested.
+	Remote     *remote.Report
+	RemoteBusy bool
+	RemoteErr  string
 }
 
 // Stats summarizes the visible result set.
@@ -75,6 +85,8 @@ type Snapshot struct {
 type App struct {
 	Fetcher Fetcher
 	Scanner Scanner
+	// Remote runs the optional worldwide ping; nil hides the feature.
+	Remote Pinger
 	// Input is bound directly to the URL text field.
 	Input *string
 
@@ -93,11 +105,20 @@ type App struct {
 	started  time.Time
 	elapsed  time.Duration
 	geoNote  string
+
+	remote       map[int]remote.Report
+	remoteErrs   map[int]string
+	remoteBusy   int
+	remoteGen    int
+	remoteCancel context.CancelFunc
 }
 
 // New creates an idle app.
 func New(f Fetcher, s Scanner) *App {
-	return &App{Fetcher: f, Scanner: s, Input: new(string), selected: -1}
+	return &App{
+		Fetcher: f, Scanner: s, Input: new(string), selected: -1,
+		remote: map[int]remote.Report{}, remoteErrs: map[int]string{}, remoteBusy: -1,
+	}
 }
 
 // SetNotifier installs the function that wakes the UI, usually c.Invalidate.
@@ -135,6 +156,7 @@ func (a *App) Load() {
 	a.selected = -1
 	a.elapsed = 0
 	a.started = time.Now()
+	a.clearRemoteLocked()
 	a.mu.Unlock()
 	a.wake()
 
@@ -162,6 +184,7 @@ func (a *App) Reprobe() {
 	a.done, a.total = 0, len(nodes)
 	a.elapsed = 0
 	a.started = time.Now()
+	a.clearRemoteLocked()
 	a.mu.Unlock()
 	a.wake()
 
@@ -181,6 +204,7 @@ func (a *App) Stop() {
 		a.status = StatusDone
 		a.message = "已停止"
 	}
+	a.clearRemoteLocked()
 	a.mu.Unlock()
 	a.wake()
 }
@@ -200,6 +224,14 @@ func (a *App) Snapshot() Snapshot {
 
 	rows := make([]Row, len(a.rows))
 	copy(rows, a.rows)
+	for i := range rows {
+		if rep, ok := a.remote[i]; ok {
+			r := rep
+			rows[i].Remote = &r
+		}
+		rows[i].RemoteBusy = a.remoteBusy == i
+		rows[i].RemoteErr = a.remoteErrs[i]
+	}
 	warnings := append([]string(nil), a.warnings...)
 
 	stats := Stats{Total: len(rows)}
@@ -383,5 +415,67 @@ func (a *App) SelectedRow() (Row, bool) {
 	if a.selected < 0 || a.selected >= len(a.rows) {
 		return Row{}, false
 	}
-	return a.rows[a.selected], true
+	row := a.rows[a.selected]
+	if rep, ok := a.remote[a.selected]; ok {
+		r := rep
+		row.Remote = &r
+	}
+	row.RemoteBusy = a.remoteBusy == a.selected
+	row.RemoteErr = a.remoteErrs[a.selected]
+	return row, true
+}
+
+// CheckGlobal asks the remote provider to ping one node from many countries.
+// Only one such measurement runs at a time; a new one cancels the previous.
+func (a *App) CheckGlobal(index int) {
+	a.mu.Lock()
+	if a.Remote == nil || index < 0 || index >= len(a.rows) {
+		a.mu.Unlock()
+		return
+	}
+	a.remoteGen++
+	gen := a.remoteGen
+	if a.remoteCancel != nil {
+		a.remoteCancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	a.remoteCancel = cancel
+	a.remoteBusy = index
+	delete(a.remoteErrs, index)
+	delete(a.remote, index)
+	target := a.rows[index].Node.Server
+	a.mu.Unlock()
+	a.wake()
+
+	go func() {
+		defer cancel()
+		report, err := a.Remote.Ping(ctx, target, 8)
+		a.mu.Lock()
+		if gen != a.remoteGen {
+			a.mu.Unlock()
+			return
+		}
+		if a.remoteBusy == index {
+			a.remoteBusy = -1
+		}
+		if err != nil {
+			a.remoteErrs[index] = err.Error()
+		} else {
+			a.remote[index] = report
+		}
+		a.mu.Unlock()
+		a.wake()
+	}()
+}
+
+// clearRemoteLocked drops every worldwide result and cancels a running check.
+func (a *App) clearRemoteLocked() {
+	a.remoteGen++
+	if a.remoteCancel != nil {
+		a.remoteCancel()
+		a.remoteCancel = nil
+	}
+	a.remote = map[int]remote.Report{}
+	a.remoteErrs = map[int]string{}
+	a.remoteBusy = -1
 }

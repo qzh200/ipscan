@@ -169,3 +169,33 @@ func (geoFailScanner) Scan(ctx context.Context, nodes []model.Node, progress fun
 	progress(scan.Progress{Done: 1, Total: 1, Index: 0, Result: r})
 	return []probe.Result{r}, errors.New("IP 归属查询失败: blocked")
 }
+
+type testPinger struct{ rep remote.Report }
+
+func (p testPinger) Ping(context.Context, string, int) (remote.Report, error) { return p.rep, nil }
+
+func TestCheckGlobalAttachesReport(t *testing.T) {
+	a := New(testFetcher{byLink: map[string]string{"https://a": ""}}, testScanner{})
+	a.Remote = testPinger{rep: remote.Report{
+		Provider: "Globalping", Target: "1.1.1.1",
+		Probes:    []remote.Probe{{Country: "FI", City: "Helsinki", OK: true, Latency: 10 * time.Millisecond}},
+		Reachable: 1, Median: 10 * time.Millisecond, Min: 10 * time.Millisecond, Max: 10 * time.Millisecond,
+	}}
+	*a.Input = "https://a"
+	a.Load()
+	waitStatus(t, a, StatusDone)
+
+	a.CheckGlobal(0)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		snap := a.Snapshot()
+		if len(snap.Rows) == 1 && snap.Rows[0].Remote != nil {
+			if snap.Rows[0].Remote.Median != 10*time.Millisecond {
+				t.Fatalf("report = %+v", snap.Rows[0].Remote)
+			}
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("global report never attached")
+}
