@@ -1,4 +1,5 @@
 /ipscan.exe
+/ipscan.exe~
 /nodecheck.exe
 /dist/
 *.test
