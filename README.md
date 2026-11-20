@@ -1,14 +1,15 @@
 # 订阅质检 · ipscan
 
-**粘贴一条订阅，得到每个节点的真实质量。** 原生 Windows 桌面应用，不做代理、不接管系统网络，只做检测。
+**粘贴一条订阅，得到每个节点的真实质量。** 原生跨平台桌面应用，不做代理、不接管系统网络，只做检测。
 
 ![Go](https://img.shields.io/badge/Go-1.27.3-00ADD8?logo=go&logoColor=white)
-![Platform](https://img.shields.io/badge/platform-Windows%2010%2B-0078D6?logo=windows&logoColor=white)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6?logo=windows&logoColor=white)
 ![UI](https://img.shields.io/badge/UI-Onevra%20%2B%20MyGo-C0653B)
 ![Formats](https://img.shields.io/badge/%E8%AE%A2%E9%98%85%E6%A0%BC%E5%BC%8F-Clash%20%7C%20Xray%20%7C%20sing--box%20%7C%20URI-6C7A89)
 ![Protocols](https://img.shields.io/badge/%E5%8D%8F%E8%AE%AE-10%20%E7%A7%8D-2E8B57)
 ![No WebView](https://img.shields.io/badge/runtime-native%2C%20no%20WebView-555555)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-2E8B57)
+![Release](https://img.shields.io/github/v/release/qzh200/ipscan?include_prereleases&sort=semver)
 
 <img src="docs/screenshot.png" alt="订阅质检主界面：订阅卡片、统计卡片与节点质量表" width="880">
 
@@ -59,9 +60,25 @@
 
 ### 直接使用
 
-1. 下载并运行 `ipscan.exe`（Windows 10/11，无需安装）。
-2. 粘贴订阅链接或本地文件路径。
-3. 点击 **开始质检**。
+从 [Releases](https://github.com/qzh200/ipscan/releases/latest) 下载对应平台的压缩包：
+
+| 平台 | 文件 | 要求 |
+| --- | --- | --- |
+| Windows x64 / ARM64 | `ipscan_*_windows_*.zip` | Windows 10/11，解压即用 |
+| Linux x64 / ARM64 | `ipscan_*_linux_*.tar.gz` | GTK 3 + WebKitGTK 4.1 |
+| macOS Intel / Apple Silicon | `ipscan_*_darwin_*.tar.gz` | macOS 12+ |
+
+```bash
+# Linux 运行依赖（Debian / Ubuntu）
+sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0
+# Fedora
+sudo dnf install gtk3 webkit2gtk4.1
+
+# macOS 未签名构建，首次运行移除隔离属性
+xattr -d com.apple.quarantine ./ipscan
+```
+
+解压后运行 `ipscan.exe`（Windows）或 `./ipscan`（Linux / macOS），粘贴订阅链接或本地文件路径，点击 **开始质检**。
 
 输入框接受：
 
@@ -73,14 +90,21 @@ D:\subs\clash.yaml
 
 ### 从源码构建
 
-需要 Go 1.27+ 与 Windows 环境：
+需要 Go 1.27+，可在任意平台交叉编译：
 
 ```powershell
 git clone https://github.com/qzh200/ipscan.git
 cd ipscan
-go build -o ipscan.exe ./cmd/ipscan
-.\ipscan.exe
+
+# 当前平台
+go build -trimpath -ldflags="-s -w" -o ipscan.exe ./cmd/ipscan
+
+# 交叉编译
+$env:GOOS="linux"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
+go build -trimpath -ldflags="-s -w" -o ipscan-linux-amd64 ./cmd/ipscan
 ```
+
+架构：`windows` / `linux` / `darwin` × `amd64` / `arm64`。MyGo 为纯 Go 实现，无需 CGO。
 
 `gopkg.in/yaml.v3` 通过 `replace` 指向仓库内的 `third_party/yaml`，其余依赖走模块代理。
 
@@ -223,7 +247,8 @@ go build -o ipscan.exe ./cmd/ipscan
 
 ## 已知限制
 
-- 仅支持 Windows；界面依赖 MyGo 的原生窗口能力。
+- 仅提供 64 位二进制；Linux 运行时需要系统安装 GTK 3 与 WebKitGTK 4.1。
+- macOS 与 Windows 构建未代码签名，首次运行可能被 Gatekeeper / SmartScreen 拦截。
 - 测量的是“本机到节点入口”的质量，不代表节点落地后的出口带宽与流媒体解锁能力。
 - 不解析订阅里的流量、到期时间等元信息（`subscription-userinfo`）。
 - QUIC 协议节点无法通过 TCP 握手判定可用性，只能展示 IP 归属。
