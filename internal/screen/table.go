@@ -260,7 +260,16 @@ func textCell(c *ui.Context, value string, width float32, color ui.Color, tk *th
 
 func scoreCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
 	ui.Row(c).Width(width).Shrink(0).Gap(6).AlignItems(ui.Center).Children(func() {
-		if !row.Probed || row.Result.Score == 0 {
+		switch {
+		case !row.Probed:
+			display.Text(c, "…", display.TextProps{Type: display.TextSecondary, FontSize: 12})
+			return
+		case row.Result.UDPOnly:
+			display.Tag(c, "未探测", display.TagProps{
+				Variant: display.TagFilled, Size: theme.Small, Color: display.TagWarning,
+			})
+			return
+		case row.Result.Score == 0:
 			display.Text(c, "—", display.TextProps{Type: display.TextSecondary, FontSize: 12})
 			return
 		}
