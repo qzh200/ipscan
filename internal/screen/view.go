@@ -114,6 +114,7 @@ func statusStrip(c *ui.Context, a *app.App, snap app.Snapshot, tk *theme.Tokens)
 				display.Tag(c, snap.Format, display.TagProps{Variant: display.TagOutlined, Size: theme.Small})
 			}
 			warningsTag(c, snap, tk)
+			geoTag(c, snap)
 			ui.Spacer(c)
 			display.Text(c, "耗时 "+formatElapsed(snap.Elapsed), display.TextProps{Type: display.TextSecondary, FontSize: 12, Code: true})
 		})
@@ -132,6 +133,18 @@ func warningsTag(c *ui.Context, snap app.Snapshot, tk *theme.Tokens) {
 		Variant: display.TagFilled, Color: display.TagWarning, Size: theme.Small,
 	})
 	overlay.Tooltip(c, tag, strings.Join(shown, "\n"), overlay.TooltipProps{Placement: overlay.Bottom})
+}
+
+// geoTag explains a missing IP registry lookup instead of leaving every
+// region cell at "—" without a reason.
+func geoTag(c *ui.Context, snap app.Snapshot) {
+	if snap.GeoNote == "" || len(snap.Rows) == 0 {
+		return
+	}
+	tag := display.Tag(c, "归属查询失败", display.TagProps{
+		Variant: display.TagOutlined, Color: display.TagWarning, Size: theme.Small,
+	})
+	overlay.Tooltip(c, tag, snap.GeoNote, overlay.TooltipProps{Placement: overlay.Bottom})
 }
 
 func statsRow(c *ui.Context, snap app.Snapshot, tk *theme.Tokens) {

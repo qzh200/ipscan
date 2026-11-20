@@ -249,6 +249,32 @@ func TestErrorState(t *testing.T) {
 	_ = snapshot(t, tt, "ipscan-error.png")
 }
 
+type geoErrorScanner struct{}
+
+func (geoErrorScanner) Scan(ctx context.Context, nodes []model.Node, progress func(scan.Progress)) ([]probe.Result, error) {
+	results := make([]probe.Result, len(nodes))
+	for i := range nodes {
+		r := probe.Result{IP: "203.0.113.10", Family: "IPv4", Reachable: true, Samples: 3, Succeeded: 3,
+			Avg: 80 * time.Millisecond, Score: 80, Grade: "良好"}
+		results[i] = r
+		progress(scan.Progress{Done: i + 1, Total: len(nodes), Index: i, Result: r})
+	}
+	return results, errors.New("ip-api 查询失败: HTTP 429")
+}
+
+func TestGeoFailureShowsReason(t *testing.T) {
+	a := app.New(fakeFetcher{body: []byte(fixture)}, geoErrorScanner{})
+	*a.Input = "https://example.com/sub"
+	st := &State{}
+	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1280, 840)
+	tt.Frame()
+	a.Load()
+	waitFor(t, tt, "归属查询失败")
+	if body := texts(tt); !strings.Contains(body, "检测完成：4 个节点") {
+		t.Fatalf("scan result should still be shown:\n%s", body)
+	}
+}
+
 // TestEndToEndLocalNode goes through the real fetcher, parser and prober
 // against a loopback listener, so the wiring is covered without the network.
 func TestEndToEndLocalNode(t *testing.T) {

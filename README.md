@@ -35,8 +35,8 @@ go build -o ipscan.exe ./cmd/ipscan
 - TLS：版本、套件、证书 CN/签发者/到期、主机名校验；QUIC 类节点（hysteria2/tuic）
   正常不监听 TCP，标为“未探测”并保留 IP 质量结果。
 
-IP 归属查询使用 ip-api.com 免费批量接口，只发送解析出的公网 IP；不可达时自动降级，
-不影响延迟/TLS 检测。
+IP 归属查询先走 ip-api.com 批量接口，被墙或限流时自动回退到 HTTPS 的 ipwho.is；
+两者都失败时状态栏显示“归属查询失败”，延迟/TLS 结果不受影响。只发送解析出的公网 IP。
 
 ## 代码结构
 

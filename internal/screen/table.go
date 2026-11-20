@@ -74,6 +74,17 @@ type filteredRow struct {
 
 const tableRowHeight float32 = 58
 
+// cellGap is the breathing room between two columns; text is clipped this much
+// narrower than its cell so an ellipsis never touches the next column.
+const cellGap float32 = 10
+
+func cellTextWidth(width float32) float32 {
+	if width <= cellGap {
+		return width
+	}
+	return width - cellGap
+}
+
 func filterRows(rows []app.Row, mode filterMode, query string) []filteredRow {
 	out := make([]filteredRow, 0, len(rows))
 	for i, r := range rows {
@@ -92,14 +103,14 @@ type tableCols struct {
 
 func newTableCols(c *ui.Context) tableCols {
 	w, _ := c.Size()
-	fixed := float32(24 + 190 + 120 + 170 + 140 + 66 + 58 + 50 + 88 + 16)
+	fixed := float32(24 + 190 + 120 + 190 + 140 + 66 + 68 + 50 + 88 + 16)
 	name := w - 70 - fixed // page padding, card border and inner padding
 	if name < 170 {
 		name = 170
 	}
 	return tableCols{
-		dot: 24, name: name, server: 190, ip: 120, geo: 170, transport: 140,
-		delay: 66, jitter: 58, loss: 50, score: 88, arrow: 16,
+		dot: 24, name: name, server: 190, ip: 120, geo: 190, transport: 140,
+		delay: 66, jitter: 68, loss: 50, score: 88, arrow: 16,
 	}
 }
 
@@ -184,20 +195,20 @@ func statusCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
 }
 
 func nameCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
-	ui.Row(c).Width(width).Shrink(0).Gap(6).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(6).AlignItems(ui.Center).Children(func() {
 		display.Tag(c, row.Node.ProtocolLabel(), display.TagProps{
 			Variant: display.TagOutlined, Size: theme.Small, Color: display.TagGray,
 		}).Shrink(0)
-		display.Text(c, row.Node.Name, display.TextProps{FontSize: 13}).Grow(1).MinWidth(0).SingleLine()
+		display.Text(c, row.Node.Name, display.TextProps{FontSize: 13}).Grow(1).MinWidth(0).MaxWidth(cellTextWidth(width)).SingleLine()
 	})
 }
 
 func serverCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
-	ui.Column(c).Width(width).Shrink(0).Gap(1).Children(func() {
-		display.Text(c, row.Node.Address(), display.TextProps{Code: true, FontSize: 12}).SingleLine()
+	ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1).Children(func() {
+		display.Text(c, row.Node.Address(), display.TextProps{Code: true, FontSize: 12}).Width(cellTextWidth(width)).SingleLine()
 		detail := firstNonEmpty(row.Node.ServerName, row.Node.Host, row.Node.Cipher)
 		if detail != "" {
-			display.Text(c, detail, display.TextProps{Type: display.TextSecondary, FontSize: 11}).SingleLine()
+			display.Text(c, detail, display.TextProps{Type: display.TextSecondary, FontSize: 11}).Width(cellTextWidth(width)).SingleLine()
 		}
 	})
 }
@@ -209,8 +220,8 @@ func ipCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
 		ip = "—"
 		family = ""
 	}
-	ui.Column(c).Width(width).Shrink(0).Gap(1).Children(func() {
-		display.Text(c, ip, display.TextProps{Code: true, FontSize: 12}).SingleLine()
+	ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1).Children(func() {
+		display.Text(c, ip, display.TextProps{Code: true, FontSize: 12}).Width(cellTextWidth(width)).SingleLine()
 		hint := family
 		if row.Result.DNS > 0 {
 			hint += fmt.Sprintf(" · DNS %dms", row.Result.DNS.Milliseconds())
@@ -218,18 +229,18 @@ func ipCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
 		if hint == "" {
 			hint = "待解析"
 		}
-		display.Text(c, hint, display.TextProps{Type: display.TextSecondary, FontSize: 11}).SingleLine()
+		display.Text(c, hint, display.TextProps{Type: display.TextSecondary, FontSize: 11}).Width(cellTextWidth(width)).SingleLine()
 	})
 }
 
 func geoCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
-	ui.Column(c).Width(width).Shrink(0).Gap(1).Children(func() {
-		display.Text(c, row.Result.GeoLabel(), display.TextProps{FontSize: 12}).SingleLine()
+	ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1).Children(func() {
+		display.Text(c, row.Result.GeoLabel(), display.TextProps{FontSize: 12}).Width(cellTextWidth(width)).SingleLine()
 		kind := row.Result.IPTypeLabel()
 		if kind == "" {
 			kind = "—"
 		}
-		display.Text(c, kind, display.TextProps{Type: display.TextSecondary, FontSize: 11}).SingleLine()
+		display.Text(c, kind, display.TextProps{Type: display.TextSecondary, FontSize: 11}).Width(cellTextWidth(width)).SingleLine()
 	})
 }
 
@@ -244,22 +255,22 @@ func transportCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) 
 	if sub == "" {
 		sub = firstNonEmpty(row.Node.ServerName, row.Node.Host, row.Node.Cipher)
 	}
-	ui.Column(c).Width(width).Shrink(0).Gap(1).Children(func() {
-		display.Text(c, row.Node.TransportLabel(), display.TextProps{FontSize: 12}).SingleLine()
+	ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1).Children(func() {
+		display.Text(c, row.Node.TransportLabel(), display.TextProps{FontSize: 12}).Width(cellTextWidth(width)).SingleLine()
 		if sub != "" {
-			display.Text(c, sub, display.TextProps{Type: display.TextSecondary, FontSize: 11, Code: true}).SingleLine()
+			display.Text(c, sub, display.TextProps{Type: display.TextSecondary, FontSize: 11, Code: true}).Width(cellTextWidth(width)).SingleLine()
 		}
 	})
 }
 
 func textCell(c *ui.Context, value string, width float32, color ui.Color, tk *theme.Tokens) {
-	ui.Box(c).Width(width).Shrink(0).Children(func() {
-		ui.Text(c, value).FontSize(12).TextColor(color).SingleLine()
+	ui.Box(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Children(func() {
+		ui.Text(c, value).FontSize(12).TextColor(color).Width(cellTextWidth(width)).SingleLine()
 	})
 }
 
 func scoreCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
-	ui.Row(c).Width(width).Shrink(0).Gap(6).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(6).AlignItems(ui.Center).Children(func() {
 		switch {
 		case !row.Probed:
 			display.Text(c, "…", display.TextProps{Type: display.TextSecondary, FontSize: 12})
