@@ -474,7 +474,7 @@ func scoreCell(c *ui.Context, row app.Row, t *ui.Theme) {
 }
 
 func emptyState(c *ui.Context, t *ui.Theme, filtered bool) {
-	title, desc := "粘贴订阅链接，开始订阅鉴定", "解析 Clash / Xray / sing-box 订阅，逐节点测量 TCP 握手、抖动、丢包与 TLS 证书，并查询 IP 归属。"
+	title, desc := "粘贴订阅链接，开始质检", "解析 Clash / Xray / sing-box 订阅，逐节点测量 TCP 握手、抖动、丢包与 TLS 证书，并查询 IP 归属。"
 	if filtered {
 		title, desc = "没有匹配的节点", "换一个筛选条件，或清空搜索框。"
 	}

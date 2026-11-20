@@ -35,7 +35,7 @@ func main() {
 
 	mygo.App.WhenReady(func() {
 		win := mygo.NewWindow(mygo.WindowOptions{
-			Title:           "订阅鉴定 · ipscan",
+			Title:           "订阅质检 · ipscan",
 			Width:           1280,
 			Height:          840,
 			MinWidth:        1180,

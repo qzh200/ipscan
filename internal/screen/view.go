@@ -80,7 +80,7 @@ func statusBadge(snap app.Snapshot) (string, components.BadgeTone) {
 func hero(c *ui.Context, snap app.Snapshot, t *ui.Theme) {
 	ui.Row(c).AlignItems(ui.End).Gap(16).Children(func() {
 		ui.Column(c).Grow(1).Gap(4).Children(func() {
-			components.Text(c, "订阅鉴定").FontSize(27).Bold()
+			components.Text(c, "订阅质检").FontSize(27).Bold()
 			components.Text(c, "订阅 → 节点 → 延迟 / 抖动 / TLS / IP 归属 / 全球探测").
 				FontSize(12.5).TextColor(t.TextMuted)
 		})
@@ -113,12 +113,12 @@ func subscriptionCard(c *ui.Context, a *app.App, t *ui.Theme) {
 				OnClick(func() { *a.Input = strings.TrimSpace(c.ReadClipboard()) })
 
 			start := components.Button(c, "", components.ButtonPrimary)
-			start.Label("开始鉴定")
+			start.Label("开始质检")
 			start.OnClick(a.Load)
 			start.Children(func() {
 				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 					components.Icon(c, lucide.Zap).Size(15, 15)
-					components.Text(c, "开始鉴定")
+					components.Text(c, "开始质检")
 				})
 			})
 		})
