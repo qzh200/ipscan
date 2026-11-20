@@ -82,28 +82,65 @@ func filterRows(rows []app.Row, mode filterMode, query string) []filteredRow {
 	return out
 }
 
-// tableColumnsFor fits the fixed columns into the card: narrower windows use
-// tighter widths so the score column never falls off the right edge.
+// tableColumnsFor proportions the columns to the window so the table always
+// fills the card: no column hogs the extra room on a wide screen, and the
+// score column stays visible on a narrow one.
 func tableColumnsFor(windowWidth float32) []ui.TableColumn {
-	minName, server, port, ip, geo, network, tls, delay, jitter, loss, score :=
-		float32(200), float32(158), float32(64), float32(116), float32(182), float32(86), float32(88), float32(88), float32(66), float32(54), float32(92)
-	if windowWidth < 1240 {
-		minName, server, port, ip, geo, network, tls, delay, jitter, loss, score =
-			150, 132, 54, 100, 150, 72, 78, 78, 56, 50, 84
+	content := max(float32(960), windowWidth-54)
+	specs := []struct {
+		id, title string
+		ratio     float32
+		min, max  float32
+		align     ui.Align
+	}{
+		{"name", "节点", .20, 180, 340, ui.Start},
+		{"server", "地址", .13, 120, 230, ui.Start},
+		{"port", "端口", .045, 52, 80, ui.End},
+		{"ip", "IP", .085, 96, 150, ui.Start},
+		{"geo", "地区 / 运营商", .185, 150, 380, ui.Start},
+		{"network", "传输", .06, 70, 96, ui.Start},
+		{"tls", "TLS", .06, 74, 100, ui.Start},
+		{"delay", "延迟", .06, 74, 100, ui.End},
+		{"jitter", "抖动", .05, 56, 88, ui.End},
+		{"loss", "丢包", .04, 48, 72, ui.End},
+		{"score", "评分", .075, 82, 120, ui.End},
 	}
-	return []ui.TableColumn{
-		{ID: "name", Title: "节点", MinWidth: minName},
-		{ID: "server", Title: "地址", Width: server},
-		{ID: "port", Title: "端口", Width: port, Align: ui.End},
-		{ID: "ip", Title: "IP", Width: ip},
-		{ID: "geo", Title: "地区 / 运营商", Width: geo},
-		{ID: "network", Title: "传输", Width: network},
-		{ID: "tls", Title: "TLS", Width: tls},
-		{ID: "delay", Title: "延迟", Width: delay, Align: ui.End},
-		{ID: "jitter", Title: "抖动", Width: jitter, Align: ui.End},
-		{ID: "loss", Title: "丢包", Width: loss, Align: ui.End},
-		{ID: "score", Title: "评分", Width: score, Align: ui.End},
+
+	widths := make([]float32, len(specs))
+	total := float32(0)
+	for i, spec := range specs {
+		w := max(spec.min, content*spec.ratio)
+		if spec.max > 0 {
+			w = min(w, spec.max)
+		}
+		widths[i] = w
+		total += w
 	}
+	// Shrink the two widest flexible columns when minimums overflow a narrow
+	// window, then give any surplus to the name and region columns.
+	for _, i := range []int{4, 0} {
+		if total <= content {
+			break
+		}
+		take := min(total-content, widths[i]-specs[i].min)
+		if take > 0 {
+			widths[i] -= take
+			total -= take
+		}
+	}
+	if total < content {
+		extra := content - total
+		widths[0] += extra * .45
+		widths[4] += extra * .55
+	}
+
+	cols := make([]ui.TableColumn, len(specs))
+	for i, spec := range specs {
+		cols[i] = ui.TableColumn{
+			ID: spec.id, Title: spec.title, Width: widths[i], Align: spec.align,
+		}
+	}
+	return cols
 }
 
 func toolbarAndTable(c *ui.Context, a *app.App, st *State, snap app.Snapshot, t *ui.Theme) {
