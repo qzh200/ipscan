@@ -364,3 +364,51 @@ func TestGlobalPingFromDrawer(t *testing.T) {
 	}
 	_ = snapshot(t, tt, "ipscan-global.png")
 }
+
+func TestSortableHeaders(t *testing.T) {
+	a := newTestApp()
+	st := &State{}
+	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1280, 840)
+	tt.Frame()
+	a.Load()
+	waitFor(t, tt, "3 个 TCP 可达")
+	tt.Advance(300 * time.Millisecond)
+
+	ordered := func(want ...string) bool {
+		body := texts(tt)
+		last := -1
+		for _, name := range want {
+			i := strings.Index(body, name)
+			if i < 0 || i <= last {
+				return false
+			}
+			last = i
+		}
+		return true
+	}
+	click := func(label string) {
+		t.Helper()
+		if err := tt.Click(label); err != nil {
+			t.Fatalf("click %q: %v", label, err)
+		}
+		tt.Advance(150 * time.Millisecond)
+	}
+
+	click("评分")
+	if !ordered("香港 WS", "日本 SS", "美国 Reality", "德国 HY2") {
+		t.Fatalf("score desc order wrong:\n%s", texts(tt))
+	}
+	_ = snapshot(t, tt, "ipscan-sort.png")
+	click("评分")
+	if !ordered("美国 Reality", "日本 SS", "香港 WS", "德国 HY2") {
+		t.Fatalf("score asc order wrong:\n%s", texts(tt))
+	}
+	click("延迟")
+	if !ordered("香港 WS", "日本 SS", "美国 Reality", "德国 HY2") {
+		t.Fatalf("delay asc order wrong:\n%s", texts(tt))
+	}
+	click("清除排序")
+	if !ordered("香港 WS", "美国 Reality", "日本 SS", "德国 HY2") {
+		t.Fatalf("cleared order wrong:\n%s", texts(tt))
+	}
+}

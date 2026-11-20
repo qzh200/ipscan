@@ -20,6 +20,11 @@ import (
 type State struct {
 	Filter int
 	Query  string
+	// Sort is the table's current order; Table keeps its column layout and
+	// reports header clicks through OnSort.
+	Sort     ui.SortOrder
+	Table    components.TableState
+	sortSeen string
 }
 
 // View is the root of the window.

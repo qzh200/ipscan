@@ -1,7 +1,11 @@
 package screen
 
 import (
+	"bytes"
+	"cmp"
 	"fmt"
+	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -138,6 +142,7 @@ func tableColumnsFor(windowWidth float32) []ui.TableColumn {
 	for i, spec := range specs {
 		cols[i] = ui.TableColumn{
 			ID: spec.id, Title: spec.title, Width: widths[i], Align: spec.align,
+			Sortable: true,
 		}
 	}
 	return cols
@@ -149,18 +154,28 @@ func toolbarAndTable(c *ui.Context, a *app.App, st *State, snap app.Snapshot, t 
 		Children(func() {
 			toolbar(c, a, st, snap, t)
 			ui.Box(c).Height(1).Background(t.Border)
+			rows := filterRows(snap.Rows, filterMode(st.Filter), st.Query)
 			switch {
 			case len(snap.Rows) == 0:
 				emptyState(c, t, false)
-			case len(filterRows(snap.Rows, filterMode(st.Filter), st.Query)) == 0:
+			case len(rows) == 0:
 				emptyState(c, t, true)
 			default:
-				rows := filterRows(snap.Rows, filterMode(st.Filter), st.Query)
+				st.Table.Sort = &st.Sort
+				st.Table.OnSort = func() {
+					// A newly chosen column starts in its natural direction:
+					// best score first, everything else ascending.
+					if st.Sort.Column != st.sortSeen {
+						st.sortSeen = st.Sort.Column
+						st.Sort.Descending = defaultDescending(st.Sort.Column)
+					}
+				}
+				sortFiltered(rows, st.Sort)
 				windowWidth, _ := c.Size()
 				components.ScrollView(c, components.ScrollViewOptions{Axes: components.ScrollBoth}).
 					Grow(1).Basis(0).Children(func() {
 					ui.Column(c).Width(max(960, windowWidth-54)).Children(func() {
-						components.Table(c, nil, tableColumnsFor(windowWidth), func() {
+						components.Table(c, &st.Table, tableColumnsFor(windowWidth), func() {
 							for _, item := range rows {
 								tableRow(c, a, item, t, snap.Selected)
 							}
@@ -188,7 +203,17 @@ func toolbar(c *ui.Context, a *app.App, st *State, snap app.Snapshot, t *ui.Them
 			components.TextBox(c, &st.Query, components.TextBoxOptions{LeadingIcon: lucide.Search()}).
 				Label("搜索节点").Placeholder("搜索节点 / 域名 / IP / 地区")
 		})
+		if st.Sort.Column == "" {
+			components.Text(c, "点击列头排序").FontSize(11).TextColor(t.TextMuted)
+		}
 		ui.Spacer(c)
+		if st.Sort.Column != "" {
+			components.Badge(c, sortLabel(st.Sort), components.BadgeOptions{Tone: components.BadgeAccent})
+			components.Button(c, "清除排序", components.ButtonGhost).OnClick(func() {
+				st.Sort = ui.SortOrder{}
+				st.sortSeen = ""
+			})
+		}
 		if snap.Status == app.StatusProbing {
 			components.Button(c, "停止", components.ButtonGhost).OnClick(a.Stop)
 		}
@@ -440,4 +465,94 @@ func compactDuration(d time.Duration) string {
 		return fmt.Sprintf("%.1fs", d.Seconds())
 	}
 	return fmt.Sprintf("%dms", d.Milliseconds())
+}
+
+// defaultDescending gives a newly chosen column its natural first direction.
+func defaultDescending(column string) bool { return column == "score" }
+
+func sortLabel(order ui.SortOrder) string {
+	names := map[string]string{
+		"name": "节点", "server": "地址", "port": "端口", "ip": "IP",
+		"geo": "地区", "network": "传输", "tls": "TLS",
+		"delay": "延迟", "jitter": "抖动", "loss": "丢包", "score": "评分",
+	}
+	label, ok := names[order.Column]
+	if !ok {
+		label = order.Column
+	}
+	if order.Descending {
+		return label + " ↓"
+	}
+	return label + " ↑"
+}
+
+// sortFiltered orders rows in place. Missing values (unprobed nodes, QUIC
+// nodes without TCP latency) stay at the end whichever direction is chosen.
+func sortFiltered(rows []filteredRow, order ui.SortOrder) {
+	if order.Column == "" || len(rows) < 2 {
+		return
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, b := &rows[i].row, &rows[j].row
+		aOK, bOK := hasSortValue(a, order.Column), hasSortValue(b, order.Column)
+		if aOK != bOK {
+			return aOK
+		}
+		c := compareRows(a, b, order.Column)
+		if c == 0 {
+			return false
+		}
+		if order.Descending {
+			return c > 0
+		}
+		return c < 0
+	})
+}
+
+func hasSortValue(r *app.Row, column string) bool {
+	switch column {
+	case "delay":
+		return r.Probed && r.Result.Reachable && r.Result.Avg > 0
+	case "jitter", "loss", "score":
+		return r.Probed && r.Result.Reachable
+	case "ip":
+		return r.Result.IP != ""
+	}
+	return true
+}
+
+func compareRows(a, b *app.Row, column string) int {
+	switch column {
+	case "name":
+		return strings.Compare(strings.ToLower(a.Node.Name), strings.ToLower(b.Node.Name))
+	case "server":
+		return strings.Compare(strings.ToLower(a.Node.Server), strings.ToLower(b.Node.Server))
+	case "port":
+		return cmp.Compare(a.Node.Port, b.Node.Port)
+	case "ip":
+		return compareIP(a.Result.IP, b.Result.IP)
+	case "geo":
+		return strings.Compare(strings.ToLower(a.Result.GeoLabel()), strings.ToLower(b.Result.GeoLabel()))
+	case "network":
+		return strings.Compare(strings.ToUpper(a.Node.Network), strings.ToUpper(b.Node.Network))
+	case "tls":
+		return strings.Compare(strings.ToUpper(a.Node.Security), strings.ToUpper(b.Node.Security))
+	case "delay":
+		return cmp.Compare(a.Result.Avg, b.Result.Avg)
+	case "jitter":
+		return cmp.Compare(a.Result.Jitter, b.Result.Jitter)
+	case "loss":
+		return cmp.Compare(a.Result.Loss, b.Result.Loss)
+	case "score":
+		return cmp.Compare(a.Result.Score, b.Result.Score)
+	}
+	return 0
+}
+
+func compareIP(a, b string) int {
+	ia, ib := net.ParseIP(a), net.ParseIP(b)
+	if ia != nil && ib != nil {
+		return bytes.Compare(ia.To16(), ib.To16())
+	}
+	return strings.Compare(a, b)
 }
