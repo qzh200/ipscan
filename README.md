@@ -39,6 +39,23 @@ go build -o ipscan.exe ./cmd/ipscan
 IP 归属查询先走 ip-api.com 批量接口，被墙或限流时自动回退到 HTTPS 的 ipwho.is；
 两者都失败时状态栏显示“归属查询失败”，延迟/TLS 结果不受影响。只发送解析出的公网 IP。
 
+## 全球多点检测
+
+点击节点行打开详情，在“全球网络测试”里执行 **全球 Ping**：通过
+[Globalping](https://globalping.io) 的公开 API 从 8 个海外探测点（国家、城市、运营商、ASN）
+对节点地址做 ICMP ping，返回每个探测点的平均延迟与丢包，并汇总可达数/中位延迟/平均丢包。
+结果同时写入表格“延迟”列的第二行（`全球 xxms`），悬停可看汇总。
+
+- 每个节点按需触发，同一时间只跑一个测量；重新加载订阅会取消并清空。
+- 未认证额度约 500 次测量/小时；目标地址会发送给 `api.globalping.io`。
+- ping.pe 的前端使用私有 WebSocket 协议、没有公开 API，因此未直接接入；`remote.Pinger`
+  是接口，后续可替换或增加其他探测服务。
+
+```sh
+GOPROXY=off go test ./...
+```
+
+
 ## 代码结构
 
 ```
@@ -46,6 +63,7 @@ cmd/ipscan            窗口与依赖装配
 internal/model        节点模型（协议/传输/安全参数）
 internal/subscription 下载与格式识别、URI/Clash/Xray/sing-box 解析
 internal/probe        DNS、TCP、TLS 探测，评分与 IP 归属
+internal/remote       第三方多地点探测（Globalping）
 internal/scan         有限并发调度与进度上报
 internal/app          应用状态、异步任务与取消（不依赖 UI）
 internal/screen       仅绘图：订阅栏、统计、节点表、详情抽屉

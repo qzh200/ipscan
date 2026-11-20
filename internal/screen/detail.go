@@ -24,14 +24,14 @@ func detailDrawer(c *ui.Context, a *app.App, snap app.Snapshot, tk *theme.Tokens
 		Title:     row.Node.Name,
 		Size:      480,
 	}, func() {
-		detailBody(c, a, row, tk)
+		detailBody(c, a, row, snap.Selected, tk)
 	})
 	if !open {
 		a.Select(-1)
 	}
 }
 
-func detailBody(c *ui.Context, a *app.App, row app.Row, tk *theme.Tokens) {
+func detailBody(c *ui.Context, a *app.App, row app.Row, index int, tk *theme.Tokens) {
 	ui.Column(c).Gap(16).Children(func() {
 		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 			display.Tag(c, row.Node.ProtocolLabel(), display.TagProps{Variant: display.TagFilled, Color: display.TagBlue})
@@ -50,6 +50,8 @@ func detailBody(c *ui.Context, a *app.App, row app.Row, tk *theme.Tokens) {
 				Type: feedback.Warning, Variant: feedback.Soft, Description: row.Result.Err,
 			})
 		}
+
+		remoteSection(c, a, row, index, tk)
 
 		sectionTitle(c, "连接质量", tk)
 		kv(c, tk, "可达性", reachLabel(row))
@@ -121,6 +123,58 @@ func sectionTitle(c *ui.Context, title string, tk *theme.Tokens) {
 		ui.Text(c, title).FontSize(13).FontWeight(600).TextColor(tk.Text)
 		ui.Box(c).Grow(1).Height(1).Background(tk.FillQuaternary)
 	})
+}
+
+// remoteSection runs and renders the optional worldwide ping.
+func remoteSection(c *ui.Context, a *app.App, row app.Row, index int, tk *theme.Tokens) {
+	sectionTitle(c, "全球网络测试", tk)
+	if a.Remote == nil {
+		kv(c, tk, "状态", "未配置远程探测服务")
+		return
+	}
+	switch {
+	case row.RemoteBusy:
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			feedback.Spin(c, feedback.SpinProps{Size: theme.Small}, nil)
+			display.Text(c, "正在向全球探测点发起 ping…", display.TextProps{Type: display.TextSecondary, FontSize: 12})
+		})
+	case row.RemoteErr != "":
+		feedback.Alert(c, "Globalping 测量失败", feedback.AlertProps{
+			Type: feedback.Warning, Variant: feedback.Soft, Description: row.RemoteErr,
+		})
+		action.Button(c, "重试", action.ButtonProps{Variant: action.Default, Size: theme.Small}).
+			OnClick(func() { a.CheckGlobal(index) })
+	case row.Remote != nil:
+		rep := row.Remote
+		display.Text(c, rep.Summary(), display.TextProps{FontSize: 12, Strong: true})
+		display.Text(c, fmt.Sprintf("via %s · %s", rep.Provider, rep.At.Format("15:04:05")),
+			display.TextProps{Type: display.TextSecondary, FontSize: 11})
+		limit := len(rep.Probes)
+		if limit > 12 {
+			limit = 12
+		}
+		for _, p := range rep.Probes[:limit] {
+			ui.Row(c).Height(22).Gap(8).AlignItems(ui.Center).Children(func() {
+				display.Text(c, p.LocationLabel(), display.TextProps{Type: display.TextSecondary, FontSize: 11}).
+					Grow(1).MinWidth(0).SingleLine()
+				display.Text(c, p.LatencyLabel(), display.TextProps{FontSize: 11, Code: true}).
+					Width(64).Shrink(0).SingleLine()
+				display.Text(c, p.LossLabel(), display.TextProps{Type: display.TextSecondary, FontSize: 11}).
+					Width(36).Shrink(0)
+			})
+		}
+		if len(rep.Probes) > limit {
+			display.Text(c, fmt.Sprintf("另有 %d 个探测点…", len(rep.Probes)-limit),
+				display.TextProps{Type: display.TextSecondary, FontSize: 11})
+		}
+		action.Button(c, "重新测试", action.ButtonProps{Variant: action.Text, Size: theme.Small}).
+			OnClick(func() { a.CheckGlobal(index) })
+	default:
+		action.Button(c, "全球 Ping（8 个探测点）", action.ButtonProps{Variant: action.Primary}).
+			OnClick(func() { a.CheckGlobal(index) })
+		display.Text(c, "通过 Globalping 从全球 8 个探测点 ping 该地址，约 5–15 秒。目标地址会发送给 api.globalping.io。",
+			display.TextProps{Type: display.TextSecondary, FontSize: 11})
+	}
 }
 
 func kv(c *ui.Context, tk *theme.Tokens, key, value string) {

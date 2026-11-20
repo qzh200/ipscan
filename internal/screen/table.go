@@ -9,6 +9,7 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
+	"github.com/lobehub/lobe-mygo/pkg/overlay"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 
 	"ipscan/internal/app"
@@ -104,14 +105,14 @@ type tableCols struct {
 
 func newTableCols(c *ui.Context) tableCols {
 	w, _ := c.Size()
-	fixed := float32(18 + 160 + 52 + 112 + 176 + 84 + 86 + 60 + 62 + 44 + 78 + 12)
+	fixed := float32(18 + 160 + 52 + 112 + 176 + 84 + 86 + 76 + 62 + 44 + 78 + 12)
 	name := w - 70 - fixed // page padding, card border and inner padding
 	if name < 170 {
 		name = 170
 	}
 	return tableCols{
 		dot: 18, name: name, server: 160, port: 52, ip: 112, geo: 176,
-		network: 84, security: 86, delay: 60, jitter: 62, loss: 44, score: 78, arrow: 12,
+		network: 84, security: 86, delay: 76, jitter: 62, loss: 44, score: 78, arrow: 12,
 	}
 }
 
@@ -183,7 +184,7 @@ func tableRow(c *ui.Context, a *app.App, item filteredRow, cols tableCols, tk *t
 		geoCell(c, row, cols.geo, tk)
 		networkCell(c, row, cols.network, tk)
 		securityCell(c, row, cols.security, tk)
-		textCell(c, delayText(row), cols.delay, toneOf(row, tk), tk)
+		latencyCell(c, row, cols.delay, tk)
 		textCell(c, jitterText(row), cols.jitter, tk.TextSecondary, tk)
 		textCell(c, lossText(row), cols.loss, lossTone(row, tk), tk)
 		scoreCell(c, row, cols.score, tk)
@@ -293,6 +294,34 @@ func securityCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
 			display.Text(c, sni, display.TextProps{Type: display.TextSecondary, FontSize: 11, Code: true}).Width(cellTextWidth(width)).SingleLine()
 		}
 	})
+}
+
+// latencyCell shows the local average and, once requested, the median from the
+// worldwide measurement underneath it.
+func latencyCell(c *ui.Context, row app.Row, width float32, tk *theme.Tokens) {
+	el := ui.Column(c).Width(width).Shrink(0).Clip().PaddingEnd(cellGap).Gap(1)
+	el.Children(func() {
+		ui.Text(c, delayText(row)).FontSize(12).TextColor(toneOf(row, tk)).
+			Width(cellTextWidth(width)).SingleLine()
+		switch {
+		case row.RemoteBusy:
+			display.Text(c, "全球…", display.TextProps{Type: display.TextSecondary, FontSize: 10}).
+				Width(cellTextWidth(width)).SingleLine()
+		case row.RemoteErr != "":
+			display.Text(c, "全球失败", display.TextProps{Type: display.TextDanger, FontSize: 10}).
+				Width(cellTextWidth(width)).SingleLine()
+		case row.Remote != nil:
+			label := "全球 —"
+			if row.Remote.Reachable > 0 {
+				label = fmt.Sprintf("全球 %dms", row.Remote.Median.Milliseconds())
+			}
+			display.Text(c, label, display.TextProps{Type: display.TextInfo, FontSize: 10}).
+				Width(cellTextWidth(width)).SingleLine()
+		}
+	})
+	if row.Remote != nil {
+		overlay.Tooltip(c, el, row.Remote.Summary(), overlay.TooltipProps{Placement: overlay.Bottom})
+	}
 }
 
 func textCell(c *ui.Context, value string, width float32, color ui.Color, tk *theme.Tokens) {

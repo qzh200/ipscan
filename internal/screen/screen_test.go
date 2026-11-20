@@ -318,3 +318,45 @@ func TestEndToEndLocalNode(t *testing.T) {
 		}
 	}
 }
+
+type fakePinger struct{}
+
+func (fakePinger) Ping(_ context.Context, target string, _ int) (remote.Report, error) {
+	probes := []remote.Probe{
+		{Country: "FI", City: "Helsinki", Network: "Hetzner", ASN: "AS24940", Latency: 12 * time.Millisecond, OK: true},
+		{Country: "US", City: "Buffalo", Network: "HostPapa", ASN: "AS36352", Latency: 90 * time.Millisecond, OK: true, Loss: 0.25},
+	}
+	return remote.Report{
+		Target: target, Provider: "Globalping", MeasurementID: "m1", At: time.Now(),
+		Probes: probes, Reachable: 2,
+		Median: 51 * time.Millisecond, Min: 12 * time.Millisecond, Max: 90 * time.Millisecond,
+		Loss: 0.125,
+	}, nil
+}
+
+func TestGlobalPingFromDrawer(t *testing.T) {
+	a := newTestApp()
+	a.Remote = fakePinger{}
+	st := &State{}
+	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1280, 840)
+	tt.Frame()
+	a.Load()
+	waitFor(t, tt, "3 个 TCP 可达")
+
+	if err := tt.Click("香港 WS"); err != nil {
+		t.Fatalf("open drawer: %v", err)
+	}
+	tt.Advance(400 * time.Millisecond)
+	if err := tt.Click("全球 Ping（8 个探测点）"); err != nil {
+		t.Fatalf("click global ping: %v", err)
+	}
+	waitFor(t, tt, "Helsinki · FI · Hetzner (AS24940)")
+
+	body := texts(tt)
+	for _, want := range []string{"全球 51ms", "2/2 个探测点可达", "Helsinki · FI · Hetzner (AS24940)", "90 ms"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q after global ping:\n%s", want, body)
+		}
+	}
+	_ = snapshot(t, tt, "ipscan-global.png")
+}
