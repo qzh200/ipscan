@@ -20,14 +20,18 @@ func nodeName(c *ui.Context, name string, size float32, wrap bool) ui.Element {
 		rest = strings.TrimSpace(name)
 	}
 	if src := flags.Image(code); ok && src != nil {
+		// Size both axes: a height-only image fills the row's free width and a
+		// white field (JP, KR) turns into a stretched blank bar.
+		imgW, imgH := ui.ImageSize(src)
 		height := float32(math.Round(float64(size) * .9))
+		width := height * (imgW / imgH)
 		row := ui.Row(c).Gap(6).AlignItems(ui.Center).MinWidth(0).Grow(1)
 		row.Children(func() {
-			// A hairline keeps flags whose field is mostly white (JP, KR) from
-			// reading as a stray dot on the row.
-			frame := ui.Row(c).Shrink(0).Border(1, c.Theme().Border.Alpha(.8)).Radius(2).Clip()
+			// The hairline keeps white-field flags from reading as a stray dot.
+			frame := ui.Row(c).Shrink(0).Width(width+2).Height(height+2).
+				Border(1, c.Theme().Border.Alpha(.8)).Radius(2).Clip()
 			frame.Children(func() {
-				ui.Image(c, src).Height(height)
+				ui.Image(c, src).Size(width, height)
 			})
 			text := components.Text(c, rest).FontSize(size).MinWidth(0).Grow(1)
 			if wrap {

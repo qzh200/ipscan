@@ -100,7 +100,10 @@ func CountryPrefix(name string) (code, rest string, ok bool) {
 
 func trimSeparators(s string) string {
 	return strings.TrimLeftFunc(s, func(r rune) bool {
-		return unicode.IsSpace(r) || strings.ContainsRune("|-／/｜·:：_~,、", r)
+		// Zero-width joiners and other format characters show up between a
+		// generated code and the name; drop them with the visible separators.
+		return unicode.IsSpace(r) || unicode.Is(unicode.Cf, r) ||
+			strings.ContainsRune("|-／/｜·:：_~,、", r)
 	})
 }
 
