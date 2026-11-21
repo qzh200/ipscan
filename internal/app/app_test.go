@@ -13,6 +13,7 @@ import (
 	"ipscan/internal/probe"
 	"ipscan/internal/remote"
 	"ipscan/internal/scan"
+	"ipscan/internal/speedtest"
 )
 
 type testFetcher struct {
@@ -276,5 +277,109 @@ proxies:
 	sc.mu.Unlock()
 	if calls != 2 {
 		t.Fatalf("scanner calls = %d, want one load + one single-node check", calls)
+	}
+}
+
+type fakeSpeedTester struct {
+	mu       sync.Mutex
+	measured int
+}
+
+func (f *fakeSpeedTester) Measure(context.Context, model.Node) (speedtest.Result, error) {
+	f.mu.Lock()
+	f.measured++
+	f.mu.Unlock()
+	return speedtest.Result{
+		MBps: 12.5, Bytes: 10 << 20, Elapsed: time.Second,
+		Connect: 40 * time.Millisecond, Target: "speed.example",
+	}, nil
+}
+
+func TestSpeedTestsLeaveScanStateAlone(t *testing.T) {
+	const body = `
+proxies:
+  - {name: 甲, type: trojan, server: a.example.com, port: 443, password: pw}
+  - {name: 乙, type: trojan, server: b.example.com, port: 443, password: pw}
+`
+	speed := &fakeSpeedTester{}
+	a := New(staticFetcher{body: body}, &countingScanner{})
+	a.Speed = speed
+	*a.Input = "local"
+	a.Load()
+	waitStatus(t, a, StatusDone)
+
+	a.TestSpeed(1)
+	waitRows := func() Snapshot {
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			snap := a.Snapshot()
+			if len(snap.Rows) == 2 && !snap.Rows[0].SpeedBusy && !snap.Rows[1].SpeedBusy &&
+				snap.Rows[0].Speed != nil && snap.Rows[1].Speed != nil {
+				return snap
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("speed tests never finished: %+v", snap.Rows)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		snap := a.Snapshot()
+		if snap.Rows[1].Speed != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("single speed test never finished: %+v", snap.Rows)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if snap := a.Snapshot(); snap.Rows[0].Speed != nil || snap.Rows[1].Speed.MBps != 12.5 {
+		t.Fatalf("single speed result = %+v", snap.Rows)
+	}
+
+	a.TestAllSpeeds()
+	snap := waitRows()
+	if snap.Status != StatusDone {
+		t.Fatalf("status = %v, want done", snap.Status)
+	}
+	for _, row := range snap.Rows {
+		if row.Speed == nil || row.Speed.MBps != 12.5 {
+			t.Fatalf("row speed = %+v", row.Speed)
+		}
+	}
+	speed.mu.Lock()
+	measured := speed.measured
+	speed.mu.Unlock()
+	if measured != 3 {
+		t.Fatalf("measurements = %d, want 1 single + 2 batch", measured)
+	}
+}
+
+type blockingSpeed struct{ started chan struct{} }
+
+func (b *blockingSpeed) Measure(ctx context.Context, _ model.Node) (speedtest.Result, error) {
+	close(b.started)
+	<-ctx.Done()
+	return speedtest.Result{}, ctx.Err()
+}
+
+func TestCancelSpeedClearsBusyState(t *testing.T) {
+	a := New(staticFetcher{body: `
+proxies:
+  - {name: 甲, type: trojan, server: a.example.com, port: 443, password: pw}
+`}, &countingScanner{})
+	b := &blockingSpeed{started: make(chan struct{})}
+	a.Speed = b
+	*a.Input = "local"
+	a.Load()
+	waitStatus(t, a, StatusDone)
+
+	a.TestSpeed(0)
+	<-b.started
+	a.CancelSpeed()
+	snap := a.Snapshot()
+	if snap.Rows[0].SpeedBusy || snap.Rows[0].SpeedErr != "" || snap.Rows[0].Speed != nil {
+		t.Fatalf("row after cancel = %+v", snap.Rows[0])
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"ipscan/internal/remote"
 	"ipscan/internal/scan"
 	"ipscan/internal/screen"
+	"ipscan/internal/speedtest"
 	"ipscan/internal/subscription"
 )
 
@@ -34,6 +35,7 @@ func newScanner() *scan.Scanner {
 func main() {
 	controller := app.New(subscription.NewFetcher(), newScanner())
 	controller.Remote = remote.NewGlobalping()
+	controller.Speed = speedtest.New()
 	view := screen.NewState()
 
 	mygo.App.WhenReady(func() {

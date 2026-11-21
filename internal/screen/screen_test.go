@@ -20,6 +20,7 @@ import (
 	"ipscan/internal/probe"
 	"ipscan/internal/remote"
 	"ipscan/internal/scan"
+	"ipscan/internal/speedtest"
 	"ipscan/internal/subscription"
 )
 
@@ -639,8 +640,10 @@ func TestDetailReprobeShowsBusyState(t *testing.T) {
 
 func TestTableRowContextMenu(t *testing.T) {
 	sc := &sizeScanner{}
+	speed := &fakeSpeed{}
 	a := app.New(fakeFetcher{body: []byte(fixture)}, sc)
 	a.Remote = fakePinger{}
+	a.Speed = speed
 	*a.Input = "https://example.com/sub"
 	st := NewState()
 	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1280, 840)
@@ -652,7 +655,7 @@ func TestTableRowContextMenu(t *testing.T) {
 		t.Fatalf("right-click row: %v", err)
 	}
 	body := texts(tt)
-	for _, want := range []string{"查看详情", "重新检测此节点", "全球 Ping（8 个探测点）",
+	for _, want := range []string{"查看详情", "重新检测此节点", "全球 Ping（8 个探测点）", "测速此节点",
 		"复制节点名称", "复制服务器地址", "复制解析 IP"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("menu missing %q:\n%s", want, body)
@@ -701,4 +704,81 @@ func TestTableRowContextMenu(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+
+	if err := tt.RightClick("香港 WS"); err != nil {
+		t.Fatalf("reopen menu: %v", err)
+	}
+	if err := tt.Click("测速此节点"); err != nil {
+		t.Fatalf("click speed test: %v", err)
+	}
+	waitCalls(t, speed, 1)
+}
+
+type fakeSpeed struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (f *fakeSpeed) Measure(context.Context, model.Node) (speedtest.Result, error) {
+	f.mu.Lock()
+	f.calls++
+	f.mu.Unlock()
+	return speedtest.Result{
+		MBps: 12.5, Bytes: 10 << 20, Elapsed: 800 * time.Millisecond,
+		Connect: 42 * time.Millisecond, Target: "speed.cloudflare.com",
+	}, nil
+}
+
+func (f *fakeSpeed) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
+func waitCalls(t *testing.T, f *fakeSpeed, want int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if f.count() >= want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("speed measurements = %d, want %d", f.count(), want)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestSpeedTestSurfaces(t *testing.T) {
+	speed := &fakeSpeed{}
+	a := newTestApp()
+	a.Speed = speed
+	st := NewState()
+	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1280, 840)
+	tt.Frame()
+	a.Load()
+	waitFor(t, tt, "3 个 TCP 可达")
+
+	if err := tt.Click("全部测速"); err != nil {
+		t.Fatalf("click all speeds: %v", err)
+	}
+	waitCalls(t, speed, 4)
+	if body := texts(tt); !strings.Contains(body, "MB/s") {
+		t.Fatalf("table speed missing:\n%s", body)
+	}
+	tt.Advance(300 * time.Millisecond)
+
+	if err := tt.Click("香港 WS"); err != nil {
+		t.Fatalf("open detail: %v", err)
+	}
+	waitFor(t, tt, "下载测速")
+	if body := texts(tt); !strings.Contains(body, "12.5 MB/s") {
+		t.Fatalf("detail speed missing:\n%s", body)
+	}
+	_ = snapshot(t, tt, "ipscan-speed.png")
+
+	if err := tt.Click("重新测速"); err != nil {
+		t.Fatalf("click re-test: %v", err)
+	}
+	waitCalls(t, speed, 5)
 }

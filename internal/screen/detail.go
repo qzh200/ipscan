@@ -80,6 +80,7 @@ func detailPage(c *ui.Context, a *app.App, snap app.Snapshot, t *ui.Theme) {
 			})
 
 			globalCard(c, a, row, index, t)
+			speedCard(c, a, row, index, snap, t)
 			if row.Result.Err != "" {
 				banner(c, t, row.Result.Err)
 			}
@@ -196,6 +197,83 @@ func paramsCard(c *ui.Context, row app.Row, t *ui.Theme) {
 			}
 		})
 	})
+}
+
+func speedCard(c *ui.Context, a *app.App, row app.Row, index int, snap app.Snapshot, t *ui.Theme) {
+	if a.Speed == nil {
+		return
+	}
+	busy := row.SpeedBusy || snap.Status == app.StatusLoading || snap.Status == app.StatusProbing
+	idle := row.Speed == nil && row.SpeedErr == "" && !row.SpeedBusy
+	if idle {
+		ui.Row(c).FillWidth().Padding(14, 16).Gap(10).AlignItems(ui.Center).
+			Background(t.Surface).Border(1, t.Border).Radius(t.Space(3)).Children(func() {
+			components.Icon(c, lucide.Gauge).Size(16, 16).TextColor(t.Accent)
+			components.Text(c, "下载测速").FontSize(13).Bold()
+			components.Text(c, "经该节点下载 10 MB 测试文件，按 MB/s 统计吞吐。").
+				FontSize(11.5).TextColor(t.TextMuted).Grow(1).SingleLine()
+			components.Button(c, "", components.ButtonPrimary).
+				Disabled(busy).
+				OnClick(func() { a.TestSpeed(index) }).
+				Children(func() {
+					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+						components.Icon(c, lucide.Gauge).Size(14, 14)
+						components.Text(c, "开始测速")
+					})
+				})
+		})
+		return
+	}
+
+	ui.Column(c).FillWidth().Padding(16).Gap(10).
+		Background(t.Surface).Border(1, t.Border).Radius(t.Space(3)).Children(func() {
+		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+			components.Icon(c, lucide.Gauge).Size(16, 16).TextColor(t.Accent)
+			components.Text(c, "下载测速").FontSize(13).Bold()
+			ui.Spacer(c)
+			components.Text(c, "经节点下载 · 10 MB").FontSize(11).TextColor(t.TextMuted)
+		})
+		switch {
+		case row.SpeedBusy:
+			ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+				components.Spinner(c, components.SpinnerRing).Size(16, 16)
+				components.Text(c, "正在经节点下载测试文件…").FontSize(12).TextColor(t.TextMuted).Grow(1)
+				components.Button(c, "停止", components.ButtonGhost).OnClick(a.CancelSpeed)
+			})
+		case row.SpeedErr != "":
+			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
+				components.Icon(c, lucide.TriangleAlert).Size(15, 15).TextColor(t.Warning)
+				components.Text(c, row.SpeedErr).FontSize(12).TextColor(t.Warning).Wrap().Grow(1)
+				components.Button(c, "重试", components.ButtonGhost).
+					Disabled(busy).
+					OnClick(func() { a.TestSpeed(index) })
+			})
+		case row.Speed != nil:
+			sp := row.Speed
+			ui.Row(c).FillWidth().Gap(12).AlignItems(ui.End).Children(func() {
+				components.Text(c, fmt.Sprintf("%s MB/s", formatMBps(sp.MBps))).
+					FontSize(26).Bold().TextColor(t.Accent)
+				components.Text(c, fmt.Sprintf("%.1f MB · 耗时 %s · 连接 %s",
+					float64(sp.Bytes)/(1<<20), formatElapsed(sp.Elapsed), formatDelay(sp.Connect))).
+					FontSize(11.5).TextColor(t.TextMuted).Grow(1).SingleLine()
+				components.Button(c, "重新测速", components.ButtonGhost).
+					Disabled(busy).
+					OnClick(func() { a.TestSpeed(index) })
+			})
+			components.Text(c, fmt.Sprintf("%s · %s", sp.Target, sp.At.Format("15:04:05"))).
+				FontSize(11).TextColor(t.TextMuted)
+		}
+	})
+}
+
+func formatMBps(v float64) string {
+	if v >= 100 {
+		return fmt.Sprintf("%.0f", v)
+	}
+	if v >= 10 {
+		return fmt.Sprintf("%.1f", v)
+	}
+	return fmt.Sprintf("%.2f", v)
 }
 
 func globalCard(c *ui.Context, a *app.App, row app.Row, index int, t *ui.Theme) {

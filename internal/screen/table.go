@@ -303,6 +303,31 @@ func toolbar(c *ui.Context, a *app.App, st *State, snap app.Snapshot, t *ui.Them
 		})
 		ipSelect(c, st)
 		ui.Spacer(c)
+		speedBusy := false
+		for _, r := range snap.Rows {
+			if r.SpeedBusy {
+				speedBusy = true
+				break
+			}
+		}
+		if a.Speed != nil && len(snap.Rows) > 0 {
+			all := components.Button(c, "", components.ButtonGhost)
+			label, icon := "全部测速", lucide.Gauge
+			if speedBusy {
+				label, icon = "停止测速", lucide.CircleStop
+				all.OnClick(a.CancelSpeed)
+			} else {
+				all.OnClick(a.TestAllSpeeds)
+			}
+			all.Label(label)
+			all.Disabled(snap.Status == app.StatusLoading || snap.Status == app.StatusProbing)
+			all.Children(func() {
+				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+					components.Icon(c, icon).Size(14, 14)
+					components.Text(c, label)
+				})
+			})
+		}
 		if snap.Status == app.StatusProbing {
 			components.Button(c, "停止", components.ButtonGhost).OnClick(a.Stop)
 		}
@@ -360,6 +385,9 @@ func tableRow(c *ui.Context, a *app.App, item filteredRow, t *ui.Theme, snap app
 		}
 		if m.Item("全球 Ping（8 个探测点）").Disabled(a.Remote == nil || row.RemoteBusy).Chosen() {
 			a.CheckGlobal(item.index)
+		}
+		if m.Item("测速此节点").Disabled(a.Speed == nil || busy || row.SpeedBusy).Chosen() {
+			a.TestSpeed(item.index)
 		}
 		m.Separator()
 		if m.Item("复制节点名称").Chosen() {
@@ -456,6 +484,15 @@ func cells(c *ui.Context, row app.Row, col int, t *ui.Theme) {
 					label = "全球 边缘"
 				}
 				components.Text(c, label).FontSize(10).TextColor(t.Accent).SingleLine()
+			}
+			switch {
+			case row.SpeedBusy:
+				muted(c, t, "测速中…", 10)
+			case row.SpeedErr != "":
+				components.Text(c, "测速失败").FontSize(10).TextColor(t.Danger).SingleLine()
+			case row.Speed != nil:
+				components.Text(c, fmt.Sprintf("%s MB/s", formatMBps(row.Speed.MBps))).
+					FontSize(10).TextColor(t.Accent).SingleLine()
 			}
 		})
 	case 8:

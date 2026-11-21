@@ -14,6 +14,7 @@ import (
 	"ipscan/internal/probe"
 	"ipscan/internal/remote"
 	"ipscan/internal/scan"
+	"ipscan/internal/speedtest"
 	"ipscan/internal/subscription"
 )
 
@@ -56,6 +57,20 @@ type Row struct {
 	Remote     *remote.Report
 	RemoteBusy bool
 	RemoteErr  string
+	// Speed is the latest download measurement, nil until requested.
+	Speed     *Speed
+	SpeedBusy bool
+	SpeedErr  string
+}
+
+// Speed is one node's download measurement, made through the node itself.
+type Speed struct {
+	MBps    float64
+	Bytes   int64
+	Elapsed time.Duration
+	Connect time.Duration
+	At      time.Time
+	Target  string
 }
 
 // Stats summarizes the visible result set.
@@ -84,12 +99,19 @@ type Snapshot struct {
 	GeoNote string
 }
 
+// SpeedTester downloads data through a node and reports the throughput.
+type SpeedTester interface {
+	Measure(ctx context.Context, n model.Node) (speedtest.Result, error)
+}
+
 // App holds the state. Methods are safe for concurrent use.
 type App struct {
 	Fetcher Fetcher
 	Scanner Scanner
 	// Remote runs the optional worldwide ping; nil hides the feature.
 	Remote Pinger
+	// Speed runs the optional download test; nil hides the feature.
+	Speed SpeedTester
 	// Input is bound directly to the URL text field.
 	Input *string
 
@@ -114,6 +136,9 @@ type App struct {
 	remoteBusy   int
 	remoteGen    int
 	remoteCancel context.CancelFunc
+
+	speedGen    int
+	speedCancel context.CancelFunc
 }
 
 // New creates an idle app.
@@ -160,6 +185,7 @@ func (a *App) Load() {
 	a.elapsed = 0
 	a.started = time.Now()
 	a.clearRemoteLocked()
+	a.clearSpeedsLocked()
 	a.mu.Unlock()
 	a.wake()
 
@@ -181,6 +207,8 @@ func (a *App) Reprobe() {
 		a.rows[i].Probed = false
 		a.rows[i].Probing = false
 		a.rows[i].Result = probe.Result{}
+		a.rows[i].Speed = nil
+		a.rows[i].SpeedErr = ""
 	}
 	a.status = StatusProbing
 	a.message = "正在重新检测…"
@@ -189,6 +217,7 @@ func (a *App) Reprobe() {
 	a.elapsed = 0
 	a.started = time.Now()
 	a.clearRemoteLocked()
+	a.clearSpeedsLocked()
 	a.mu.Unlock()
 	a.wake()
 
@@ -220,6 +249,137 @@ func (a *App) ReprobeNode(index int) {
 	})
 }
 
+// SpeedWorkers is how many nodes TestAllSpeeds downloads at once.
+const SpeedWorkers = 4
+
+// TestSpeed measures one node's download speed. Starting another speed test
+// cancels the running one; full scans and subscription loads cancel it too.
+func (a *App) TestSpeed(index int) {
+	a.mu.Lock()
+	if a.Speed == nil || a.status == StatusLoading || a.status == StatusProbing ||
+		index < 0 || index >= len(a.rows) {
+		a.mu.Unlock()
+		return
+	}
+	a.beginSpeedLocked()
+	gen := a.speedGen
+	tester := a.Speed
+	node := a.rows[index].Node
+	a.rows[index].SpeedBusy = true
+	a.rows[index].SpeedErr = ""
+	ctx, cancel := context.WithCancel(context.Background())
+	a.speedCancel = cancel
+	a.mu.Unlock()
+	a.wake()
+
+	go func() {
+		defer cancel()
+		res, err := tester.Measure(ctx, node)
+		a.finishSpeed(gen, index, res, err)
+	}()
+}
+
+// CancelSpeed stops the running download measurement, if any.
+func (a *App) CancelSpeed() {
+	a.mu.Lock()
+	a.clearSpeedsLocked()
+	a.mu.Unlock()
+	a.wake()
+}
+
+// TestAllSpeeds measures every node in parallel, four at a time.
+func (a *App) TestAllSpeeds() {
+	a.mu.Lock()
+	if a.Speed == nil || len(a.rows) == 0 ||
+		a.status == StatusLoading || a.status == StatusProbing {
+		a.mu.Unlock()
+		return
+	}
+	a.beginSpeedLocked()
+	gen := a.speedGen
+	tester := a.Speed
+	nodes := make([]model.Node, len(a.rows))
+	for i := range a.rows {
+		nodes[i] = a.rows[i].Node
+		a.rows[i].SpeedBusy = true
+		a.rows[i].SpeedErr = ""
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	a.speedCancel = cancel
+	a.mu.Unlock()
+	a.wake()
+
+	go func() {
+		defer cancel()
+		sem := make(chan struct{}, SpeedWorkers)
+		var wg sync.WaitGroup
+		for i, node := range nodes {
+			wg.Add(1)
+			go func(index int, node model.Node) {
+				defer wg.Done()
+				select {
+				case sem <- struct{}{}:
+				case <-ctx.Done():
+					a.finishSpeed(gen, index, speedtest.Result{}, ctx.Err())
+					return
+				}
+				defer func() { <-sem }()
+				res, err := tester.Measure(ctx, node)
+				a.finishSpeed(gen, index, res, err)
+			}(i, node)
+		}
+		wg.Wait()
+	}()
+}
+
+// beginSpeedLocked cancels the running measurement and marks the generation.
+func (a *App) beginSpeedLocked() {
+	a.speedGen++
+	if a.speedCancel != nil {
+		a.speedCancel()
+		a.speedCancel = nil
+	}
+	for i := range a.rows {
+		a.rows[i].SpeedBusy = false
+	}
+}
+
+func (a *App) finishSpeed(gen, index int, res speedtest.Result, err error) {
+	a.mu.Lock()
+	if gen != a.speedGen || index < 0 || index >= len(a.rows) {
+		a.mu.Unlock()
+		return
+	}
+	row := &a.rows[index]
+	row.SpeedBusy = false
+	if err != nil {
+		row.SpeedErr = err.Error()
+		a.mu.Unlock()
+		a.wake()
+		return
+	}
+	row.SpeedErr = ""
+	row.Speed = &Speed{
+		MBps: res.MBps, Bytes: res.Bytes, Elapsed: res.Elapsed,
+		Connect: res.Connect, At: time.Now(), Target: res.Target,
+	}
+	a.mu.Unlock()
+	a.wake()
+}
+
+// clearSpeedsLocked cancels measurements and drops their busy state.
+func (a *App) clearSpeedsLocked() {
+	a.speedGen++
+	if a.speedCancel != nil {
+		a.speedCancel()
+		a.speedCancel = nil
+	}
+	for i := range a.rows {
+		a.rows[i].SpeedBusy = false
+		a.rows[i].SpeedErr = ""
+	}
+}
+
 // Stop cancels a running load or probe.
 func (a *App) Stop() {
 	a.mu.Lock()
@@ -235,6 +395,7 @@ func (a *App) Stop() {
 		a.rows[i].Probing = false
 	}
 	a.clearRemoteLocked()
+	a.clearSpeedsLocked()
 	a.mu.Unlock()
 	a.wake()
 }
