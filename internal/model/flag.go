@@ -60,7 +60,12 @@ func canonicalCode(code string) string {
 // prefix. ok is false when the name has no prefix ("ss02 香港", "is really
 // slow", "日本 01", …). The separator between code and name is dropped.
 func CountryPrefix(name string) (code, rest string, ok bool) {
-	s := strings.TrimSpace(name)
+	// Generators often put a zero-width space (or another format character)
+	// before the flag emoji or code; it is invisible but would hide the
+	// prefix from the parser and leave the emoji to render as letters.
+	s := strings.TrimLeftFunc(strings.TrimSpace(name), func(r rune) bool {
+		return unicode.Is(unicode.Cf, r)
+	})
 	r := []rune(s)
 	if len(r) < 3 {
 		return "", s, false

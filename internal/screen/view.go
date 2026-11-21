@@ -208,7 +208,7 @@ func footer(c *ui.Context, snap app.Snapshot, st *State, t *ui.Theme) {
 			if visible != len(snap.Rows) {
 				label = fmt.Sprintf("显示 %d / %d 个节点", visible, len(snap.Rows))
 			}
-			components.Text(c, label+" · 点击行查看全部参数").
+			components.Text(c, label+" · 点击行查看全部参数 · 右键更多操作").
 				FontSize(11).TextColor(t.TextMuted)
 		}
 	})

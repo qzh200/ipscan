@@ -33,6 +33,25 @@ func detailPage(c *ui.Context, a *app.App, snap app.Snapshot, t *ui.Theme) {
 					})
 				})
 				ui.Spacer(c)
+				busy := row.Probing || snap.Status == app.StatusLoading || snap.Status == app.StatusProbing
+				reprobe := components.Button(c, "", components.ButtonGhost)
+				reprobe.Label("重新检测")
+				reprobe.Disabled(busy)
+				reprobe.OnClick(func() { a.ReprobeNode(index) })
+				reprobe.Children(func() {
+					ui.Row(c).Gap(5).AlignItems(ui.Center).Children(func() {
+						if row.Probing {
+							components.Spinner(c, components.SpinnerRing).Size(13, 13)
+						} else {
+							components.Icon(c, lucide.RefreshCw).Size(14, 14)
+						}
+						label := "重新检测"
+						if row.Probing {
+							label = "检测中…"
+						}
+						components.Text(c, label)
+					})
+				})
 				if row.Node.Raw != "" {
 					components.Button(c, "复制节点链接", components.ButtonGhost).
 						OnClick(func() { c.WriteClipboard(row.Node.Raw) })

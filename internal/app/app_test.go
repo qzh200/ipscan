@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -199,4 +200,81 @@ func TestCheckGlobalAttachesReport(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("global report never attached")
+}
+
+type staticFetcher struct{ body string }
+
+func (f staticFetcher) Fetch(context.Context, string) ([]byte, error) { return []byte(f.body), nil }
+
+// countingScanner returns a different average on every call, so a re-check's
+// new result is distinguishable from the original one.
+type countingScanner struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (s *countingScanner) Scan(ctx context.Context, nodes []model.Node, _ func(scan.Progress)) ([]probe.Result, error) {
+	s.mu.Lock()
+	s.calls++
+	call := s.calls
+	s.mu.Unlock()
+	out := make([]probe.Result, len(nodes))
+	for i := range out {
+		out[i] = probe.Result{
+			IP: "1.1.1.1", Family: "IPv4", Reachable: true,
+			Samples: 3, Succeeded: 3,
+			Avg:   time.Duration(call) * time.Millisecond,
+			Score: 60 + call, Grade: "良好",
+		}
+	}
+	return out, nil
+}
+
+func TestReprobeNodeUpdatesOnlyThatRow(t *testing.T) {
+	const body = `
+proxies:
+  - {name: 甲, type: trojan, server: a.example.com, port: 443, password: pw}
+  - {name: 乙, type: trojan, server: b.example.com, port: 443, password: pw}
+`
+	sc := &countingScanner{}
+	a := New(staticFetcher{body: body}, sc)
+	*a.Input = "local"
+	a.Load()
+	snap := waitStatus(t, a, StatusDone)
+	if len(snap.Rows) != 2 {
+		t.Fatalf("rows = %+v", snap.Rows)
+	}
+	first := snap.Rows[0].Result.Avg
+	firstScore := snap.Rows[0].Result.Score
+
+	a.ReprobeNode(-1)
+	a.ReprobeNode(2)
+	if snap = a.Snapshot(); snap.Rows[0].Result.Avg != first {
+		t.Fatalf("out-of-range reprobe changed a row: %+v", snap.Rows)
+	}
+
+	a.ReprobeNode(1)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		snap = a.Snapshot()
+		if snap.Rows[1].Probed && !snap.Rows[1].Probing && snap.Rows[1].Result.Avg != first {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("single reprobe never finished: %+v", snap.Rows)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if snap.Status != StatusDone {
+		t.Fatalf("status = %v, want done", snap.Status)
+	}
+	if snap.Rows[0].Result.Avg != first || snap.Rows[0].Result.Score != firstScore {
+		t.Fatalf("row 0 changed: %+v", snap.Rows[0].Result)
+	}
+	sc.mu.Lock()
+	calls := sc.calls
+	sc.mu.Unlock()
+	if calls != 2 {
+		t.Fatalf("scanner calls = %d, want one load + one single-node check", calls)
+	}
 }

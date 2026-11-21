@@ -275,7 +275,7 @@ func toolbarAndTable(c *ui.Context, a *app.App, st *State, snap app.Snapshot, t 
 					ui.Column(c).Width(width).Children(func() {
 						components.Table(c, &st.Table, cols, func() {
 							for _, item := range rows {
-								tableRow(c, a, item, t, snap.Selected)
+								tableRow(c, a, item, t, snap)
 							}
 						})
 					})
@@ -339,15 +339,42 @@ func ipSelect(c *ui.Context, st *State) {
 	})
 }
 
-func tableRow(c *ui.Context, a *app.App, item filteredRow, t *ui.Theme, selected int) {
+func tableRow(c *ui.Context, a *app.App, item filteredRow, t *ui.Theme, snap app.Snapshot) {
 	row := item.row
-	el := components.TableRow(c, item.index, model.SortName(row.Node.Name), item.index == selected, func(col int) {
+	selected := item.index == snap.Selected
+	el := components.TableRow(c, item.index, model.SortName(row.Node.Name), selected, func(col int) {
 		cells(c, row, col, t)
 	})
 	el.MinHeight(44).OnClick(func() { a.Select(item.index) })
-	if el.Hovered() && item.index != selected {
+	if el.Hovered() && !selected {
 		el.Background(t.SurfaceHover)
 	}
+	busy := row.Probing || snap.Status == app.StatusLoading || snap.Status == app.StatusProbing
+	components.ContextMenu(c, el, func(m *components.Menu) {
+		if m.Item("查看详情").Chosen() {
+			a.Select(item.index)
+		}
+		m.Separator()
+		if m.Item("重新检测此节点").Disabled(busy).Chosen() {
+			a.ReprobeNode(item.index)
+		}
+		if m.Item("全球 Ping（8 个探测点）").Disabled(a.Remote == nil || row.RemoteBusy).Chosen() {
+			a.CheckGlobal(item.index)
+		}
+		m.Separator()
+		if m.Item("复制节点名称").Chosen() {
+			c.WriteClipboard(row.Node.Name)
+		}
+		if m.Item("复制服务器地址").Chosen() {
+			c.WriteClipboard(row.Node.Address())
+		}
+		if m.Item("复制解析 IP").Disabled(row.Result.IP == "").Chosen() {
+			c.WriteClipboard(row.Result.IP)
+		}
+		if m.Item("复制节点链接").Disabled(row.Node.Raw == "").Chosen() {
+			c.WriteClipboard(row.Node.Raw)
+		}
+	})
 }
 
 func cells(c *ui.Context, row app.Row, col int, t *ui.Theme) {
@@ -453,6 +480,8 @@ func muted(c *ui.Context, t *ui.Theme, value string, size float32) ui.Element {
 
 func scoreCell(c *ui.Context, row app.Row, t *ui.Theme) {
 	switch {
+	case row.Probing:
+		components.Text(c, "检测中…").FontSize(11.5).TextColor(t.TextMuted).SingleLine()
 	case !row.Probed:
 		components.Text(c, "…").FontSize(12).TextColor(t.TextMuted)
 	case row.Result.UDPOnly:

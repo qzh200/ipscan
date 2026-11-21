@@ -21,6 +21,10 @@ func TestCountryPrefix(t *testing.T) {
 		{"KR\u200b 韩国 03", "KR", "韩国 03", true},
 		{"🇭🇰Hong Kong", "HK", "Hong Kong", true},
 		{"🇭🇰 Hong Kong 02", "HK", "Hong Kong 02", true},
+		{"\u200b🇰🇷 韩国 01 [世宗电信 ISP]-test", "KR", "韩国 01 [世宗电信 ISP]-test", true},
+		{"\u200bKR 韩国 02", "KR", "韩国 02", true},
+		{"\ufeff🇯🇵 日本01-test", "JP", "日本01-test", true},
+		{"\u200b日本 01", "", "", false},
 		// Not a country prefix.
 		{"ss02 香港", "", "", false},
 		{"is really slow", "", "", false},

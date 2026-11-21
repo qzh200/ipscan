@@ -49,6 +49,9 @@ type Row struct {
 	Node   model.Node
 	Result probe.Result
 	Probed bool
+	// Probing marks a single-node re-check; the previous result stays visible
+	// until the new measurement replaces it.
+	Probing bool
 	// Remote is the latest worldwide ping, nil until requested.
 	Remote     *remote.Report
 	RemoteBusy bool
@@ -176,6 +179,7 @@ func (a *App) Reprobe() {
 	for i := range a.rows {
 		nodes[i] = a.rows[i].Node
 		a.rows[i].Probed = false
+		a.rows[i].Probing = false
 		a.rows[i].Result = probe.Result{}
 	}
 	a.status = StatusProbing
@@ -193,6 +197,29 @@ func (a *App) Reprobe() {
 	})
 }
 
+// ReprobeNode re-measures one node and leaves every other row untouched. It is
+// ignored while a full load or rescan runs; starting a check for another row
+// cancels the previous single-node check.
+func (a *App) ReprobeNode(index int) {
+	a.mu.Lock()
+	if a.status == StatusLoading || a.status == StatusProbing ||
+		index < 0 || index >= len(a.rows) || a.rows[index].Probing {
+		a.mu.Unlock()
+		return
+	}
+	for i := range a.rows {
+		a.rows[i].Probing = false
+	}
+	a.rows[index].Probing = true
+	node := a.rows[index].Node
+	a.mu.Unlock()
+	a.wake()
+
+	a.start(func(ctx context.Context, gen int) {
+		a.probeOne(ctx, gen, index, node)
+	})
+}
+
 // Stop cancels a running load or probe.
 func (a *App) Stop() {
 	a.mu.Lock()
@@ -203,6 +230,9 @@ func (a *App) Stop() {
 	if a.status == StatusLoading || a.status == StatusProbing {
 		a.status = StatusDone
 		a.message = "已停止"
+	}
+	for i := range a.rows {
+		a.rows[i].Probing = false
 	}
 	a.clearRemoteLocked()
 	a.mu.Unlock()
@@ -390,6 +420,37 @@ func (a *App) probe(ctx context.Context, gen int, nodes []model.Node) {
 		}
 		if unreachable > 0 {
 			a.message += fmt.Sprintf("，%d 个不可达", unreachable)
+		}
+	})
+}
+
+// probeOne measures a single node for ReprobeNode. It shares the generation
+// counter with the full scan, so a later load or rescan invalidates it.
+func (a *App) probeOne(ctx context.Context, gen int, index int, node model.Node) {
+	if a.Scanner == nil {
+		a.update(gen, func() {
+			if index < len(a.rows) {
+				a.rows[index].Probing = false
+			}
+			a.failLocked("未配置探测器")
+		})
+		return
+	}
+	results, geoErr := a.Scanner.Scan(ctx, []model.Node{node}, func(scan.Progress) {})
+	if ctx.Err() != nil {
+		return
+	}
+	a.update(gen, func() {
+		if index >= len(a.rows) {
+			return
+		}
+		a.rows[index].Probing = false
+		if len(results) > 0 {
+			a.rows[index].Result = results[0]
+			a.rows[index].Probed = true
+		}
+		if geoErr != nil {
+			a.geoNote = geoErr.Error()
 		}
 	})
 }

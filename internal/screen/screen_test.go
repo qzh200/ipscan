@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -477,7 +478,7 @@ proxies:
   - {name: amArmenia 電門 藕豆子, type: vmess, server: am.example.com, port: 443, uuid: 33333333-3333-3333-3333-333333333333, cipher: auto, tls: true}
   - {name: auAustralia Sydney 🦘, type: vmess, server: au.example.com, port: 443, uuid: 44444444-4444-4444-4444-444444444444, cipher: auto, tls: true}
   - {name: hkHong Kong ミク, type: vmess, server: hk2.example.com, port: 443, uuid: 55555555-5555-5555-5555-555555555555, cipher: auto, tls: true}
-  - {name: "KR\u00a0韩国 01 [世宗电信 ISP]-test", type: vmess, server: kr.example.com, port: 443, uuid: 66666666-6666-6666-6666-666666666666, cipher: auto, tls: true}
+  - {name: "\u200B🇰🇷 韩国 01 [世宗电信 ISP]-test", type: vmess, server: kr.example.com, port: 443, uuid: 66666666-6666-6666-6666-666666666666, cipher: auto, tls: true}
   - {name: 日本01-test, type: vmess, server: jp2.example.com, port: 443, uuid: 77777777-7777-7777-7777-777777777777, cipher: auto, tls: true}
 `
 	a := app.New(fakeFetcher{body: []byte(fixture)}, fakeScanner{})
@@ -496,8 +497,8 @@ proxies:
 			t.Fatalf("missing %q in list:\n%s", want, body)
 		}
 	}
-	if strings.Contains(body, "KR") {
-		t.Fatalf("flag code should be replaced by the flag picture:\n%s", body)
+	if strings.Contains(body, "KR") || strings.Contains(body, "🇰🇷") {
+		t.Fatalf("flag prefix should be replaced by the flag picture:\n%s", body)
 	}
 	_ = snapshot(t, tt, "ipscan-flags.png")
 
@@ -518,4 +519,186 @@ proxies:
 		}
 	}
 	_ = snapshot(t, tt, "ipscan-anycast.png")
+}
+
+// sizeScanner records how many nodes each scan covered, so the test can tell a
+// single-node re-check from a full rescan.
+type sizeScanner struct {
+	fakeScanner
+	mu    sync.Mutex
+	sizes []int
+}
+
+func (s *sizeScanner) Scan(ctx context.Context, nodes []model.Node, progress func(scan.Progress)) ([]probe.Result, error) {
+	s.mu.Lock()
+	s.sizes = append(s.sizes, len(nodes))
+	s.mu.Unlock()
+	return s.fakeScanner.Scan(ctx, nodes, progress)
+}
+
+func TestDetailReprobeOneNode(t *testing.T) {
+	sc := &sizeScanner{}
+	a := app.New(fakeFetcher{body: []byte(fixture)}, sc)
+	*a.Input = "https://example.com/sub"
+	st := NewState()
+	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1280, 840)
+	tt.Frame()
+	a.Load()
+	waitFor(t, tt, "3 个 TCP 可达")
+
+	if err := tt.Click("香港 WS"); err != nil {
+		t.Fatalf("open detail: %v", err)
+	}
+	waitFor(t, tt, "重新检测")
+	if err := tt.Click("重新检测"); err != nil {
+		t.Fatalf("click reprobe: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		sc.mu.Lock()
+		sizes := append([]int(nil), sc.sizes...)
+		sc.mu.Unlock()
+		if len(sizes) >= 2 {
+			if sizes[len(sizes)-1] != 1 {
+				t.Fatalf("last scan covered %d nodes, want 1: %v", sizes[len(sizes)-1], sizes)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("single-node scan never ran: %v", sizes)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	waitFor(t, tt, "重新检测")
+	if row, ok := a.SelectedRow(); !ok || row.Probing || !row.Probed {
+		t.Fatalf("selected row after reprobe = %+v ok=%v", row, ok)
+	}
+}
+
+// gatedScanner blocks the single-node scan so the test can observe the busy
+// state before the new result arrives.
+type gatedScanner struct {
+	fakeScanner
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (s *gatedScanner) Scan(ctx context.Context, nodes []model.Node, progress func(scan.Progress)) ([]probe.Result, error) {
+	if len(nodes) == 1 {
+		s.once.Do(func() { close(s.started) })
+		select {
+		case <-s.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return s.fakeScanner.Scan(ctx, nodes, progress)
+}
+
+func TestDetailReprobeShowsBusyState(t *testing.T) {
+	sc := &gatedScanner{started: make(chan struct{}), release: make(chan struct{})}
+	a := app.New(fakeFetcher{body: []byte(fixture)}, sc)
+	*a.Input = "https://example.com/sub"
+	st := NewState()
+	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1280, 840)
+	tt.Frame()
+	a.Load()
+	waitFor(t, tt, "3 个 TCP 可达")
+
+	if err := tt.Click("香港 WS"); err != nil {
+		t.Fatalf("open detail: %v", err)
+	}
+	waitFor(t, tt, "重新检测")
+	if err := tt.Click("重新检测"); err != nil {
+		t.Fatalf("click reprobe: %v", err)
+	}
+	<-sc.started
+	tt.Advance(100 * time.Millisecond)
+	if body := texts(tt); !strings.Contains(body, "检测中…") {
+		t.Fatalf("busy state missing:\n%s", body)
+	}
+	close(sc.release)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		row, ok := a.SelectedRow()
+		if ok && !row.Probing {
+			if !row.Probed {
+				t.Fatalf("row lost its result: %+v", row)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("row still probing: %+v ok=%v", row, ok)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	tt.Advance(400 * time.Millisecond)
+}
+
+func TestTableRowContextMenu(t *testing.T) {
+	sc := &sizeScanner{}
+	a := app.New(fakeFetcher{body: []byte(fixture)}, sc)
+	a.Remote = fakePinger{}
+	*a.Input = "https://example.com/sub"
+	st := NewState()
+	tt := ui.NewTester(func(c *ui.Context) { View(c, a, st) }, 1280, 840)
+	tt.Frame()
+	a.Load()
+	waitFor(t, tt, "3 个 TCP 可达")
+
+	if err := tt.RightClick("香港 WS"); err != nil {
+		t.Fatalf("right-click row: %v", err)
+	}
+	body := texts(tt)
+	for _, want := range []string{"查看详情", "重新检测此节点", "全球 Ping（8 个探测点）",
+		"复制节点名称", "复制服务器地址", "复制解析 IP"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("menu missing %q:\n%s", want, body)
+		}
+	}
+	_ = snapshot(t, tt, "ipscan-context-menu.png")
+
+	if err := tt.Click("复制解析 IP"); err != nil {
+		t.Fatalf("click copy: %v", err)
+	}
+	if got := tt.Clipboard(); got != "203.0.113.10" {
+		t.Fatalf("clipboard = %q", got)
+	}
+
+	if err := tt.RightClick("香港 WS"); err != nil {
+		t.Fatalf("reopen menu: %v", err)
+	}
+	if err := tt.Click("查看详情"); err != nil {
+		t.Fatalf("click detail: %v", err)
+	}
+	waitFor(t, tt, "节点参数")
+	if err := tt.Click("返回列表"); err != nil {
+		t.Fatalf("back: %v", err)
+	}
+	waitFor(t, tt, "香港 WS")
+
+	if err := tt.RightClick("香港 WS"); err != nil {
+		t.Fatalf("reopen menu: %v", err)
+	}
+	if err := tt.Click("重新检测此节点"); err != nil {
+		t.Fatalf("click reprobe: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		sc.mu.Lock()
+		sizes := append([]int(nil), sc.sizes...)
+		sc.mu.Unlock()
+		if len(sizes) >= 2 {
+			if sizes[len(sizes)-1] != 1 {
+				t.Fatalf("last scan covered %d nodes, want 1: %v", sizes[len(sizes)-1], sizes)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("single-node reprobe from menu never ran: %v", sizes)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
